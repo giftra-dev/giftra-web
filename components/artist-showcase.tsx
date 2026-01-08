@@ -1,5 +1,3 @@
-import { Button } from "@/components/ui/button"
-
 const artists = [
   {
     name: "Emma Rodriguez",
@@ -53,9 +51,9 @@ export function ArtistShowcase() {
               <h3 className="mb-1 text-lg font-semibold text-foreground">{artist.name}</h3>
               <p className="mb-2 text-sm text-muted-foreground">{artist.style}</p>
               <p className="mb-4 text-sm font-medium text-primary">From {artist.startingPrice}</p>
-              <Button variant="outline" size="sm" className="w-full bg-transparent">
+              <button className="w-full bg-transparent border border-gray-300 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-gray-100 transition">
                 View Profile
-              </Button>
+              </button>
             </div>
           ))}
         </div>

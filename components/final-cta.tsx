@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button"
 import { ArrowRight } from "lucide-react"
 
 export function FinalCta() {
@@ -13,17 +12,16 @@ export function FinalCta() {
             Start your custom gift journey today and create memories that last forever
           </p>
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90">
-              Start a Custom Gift
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="border-border text-foreground hover:bg-secondary bg-transparent"
-            >
-              Explore Artists
-            </Button>
+            <button className="inline-flex items-center justify-center rounded-md px-6 py-3 text-sm font-medium
+             bg-black text-white hover:bg-gray-800 transition">
+                Start a Custom Gift
+                <ArrowRight className="ml-2 h-4 w-4" />
+            </button>
+
+            <button className="inline-flex items-center justify-center rounded-md px-6 py-3 text-sm font-medium
+                        border border-gray-300 text-gray-900 bg-transparent hover:bg-gray-100 transition">
+                Explore Artists
+            </button>
           </div>
         </div>
       </div>

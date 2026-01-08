@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button"
 import { ArrowRight, Sparkles } from "lucide-react"
 
 export function HeroSection() {
@@ -18,17 +17,17 @@ export function HeroSection() {
               Discover artists. Co-create personalized gifts for every occasion.
             </p>
             <div className="flex flex-col gap-4 sm:flex-row">
-              <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90">
+            <button className="inline-flex items-center justify-center rounded-md px-6 py-3 text-sm font-medium
+             bg-black text-white hover:bg-gray-800 transition">
                 Find an Artist
                 <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="border-border text-foreground hover:bg-secondary bg-transparent"
-              >
+            </button>
+
+            <button className="inline-flex items-center justify-center rounded-md px-6 py-3 text-sm font-medium
+                        border border-gray-300 text-gray-900 bg-transparent hover:bg-gray-100 transition">
                 Become an Artist
-              </Button>
+            </button>
+
             </div>
           </div>
           <div className="relative hidden lg:block">

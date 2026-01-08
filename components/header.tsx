@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
 
 export function Header() {
   return (
@@ -20,12 +19,16 @@ export function Header() {
           </Link>
         </nav>
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" className="hidden md:inline-flex">
-            Log in
-          </Button>
-          <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
-            Get Started
-          </Button>
+            <button className="hidden md:inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium
+             text-gray-700 hover:bg-gray-100 transition">
+                Log in
+            </button>
+
+            <button className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium
+                        bg-black text-white hover:bg-gray-800 transition">
+                Get Started
+            </button>
+
         </div>
       </div>
     </header>
