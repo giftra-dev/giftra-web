@@ -10,37 +10,38 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Giftra - AI-Powered Gifting Made Personal",
+  title: "Giftra - Personalized Gifts from Talented Artists",
   description:
-    "Transform your gift-giving with AI-powered recommendations, relationship tracking, and a curated marketplace. Never miss another special occasion.",
+    "Connect with skilled artists to create unique, personalized gifts. From custom portraits to handcrafted items, find the perfect gift for every occasion.",
   keywords: [
-    "gift giving",
-    "AI gifts",
-    "gift recommendations",
-    "relationship management",
-    "occasion reminders",
+    "personalized gifts",
+    "custom artwork",
+    "handmade gifts",
+    "artist marketplace",
+    "custom portraits",
     "gift marketplace",
+    "artisan gifts",
   ],
   authors: [{ name: "Giftra" }],
   openGraph: {
-    title: "Giftra - AI-Powered Gifting Made Personal",
+    title: "Giftra - Personalized Gifts from Talented Artists",
     description:
-      "Transform your gift-giving with AI-powered recommendations, relationship tracking, and a curated marketplace.",
+      "Connect with skilled artists to create unique, personalized gifts. From custom portraits to handcrafted items.",
     type: "website",
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Giftra - AI-Powered Gifting Made Personal",
+    title: "Giftra - Personalized Gifts from Talented Artists",
     description:
-      "Transform your gift-giving with AI-powered recommendations, relationship tracking, and a curated marketplace.",
+      "Connect with skilled artists to create unique, personalized gifts. From custom portraits to handcrafted items.",
   },
 };
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f8f5ff" },
-    { media: "(prefers-color-scheme: dark)", color: "#1a1625" },
+    { media: "(prefers-color-scheme: light)", color: "#f5f0e8" },
+    { media: "(prefers-color-scheme: dark)", color: "#1a2e1a" },
   ],
   width: "device-width",
   initialScale: 1,
