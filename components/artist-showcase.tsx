@@ -1,3 +1,5 @@
+import Image from "next/image"
+
 const artists = [
   {
     name: "Emma Rodriguez",
@@ -42,9 +44,11 @@ export function ArtistShowcase() {
               className="group rounded-2xl border border-border bg-card p-6 text-center shadow-sm transition-all hover:shadow-md"
             >
               <div className="mx-auto mb-4 h-20 w-20 overflow-hidden rounded-full bg-muted">
-                <img
-                  src={artist.avatar || "/placeholder.svg"}
+                <Image
+                  src={artist.avatar}
                   alt={artist.name}
+                  width={80}
+                  height={80}
                   className="h-full w-full object-cover"
                 />
               </div>

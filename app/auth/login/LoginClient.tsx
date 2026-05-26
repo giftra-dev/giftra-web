@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   Card,
   CardContent,
@@ -15,31 +16,99 @@ import {
 } from "@/components/ui/card"
 import { Gift, Mail, Lock, Eye, EyeOff } from "lucide-react"
 import { useGiftraStore, type UserRole } from "@/lib/store"
+import { getCurrentProfile, signIn } from "@/lib/supabase/queries"
+import { hasSupabaseConfig, isDemoAuthAllowed } from "@/lib/supabase/config"
+
+const isUserRole = (role: unknown): role is UserRole =>
+  role === "customer" || role === "artist" || role === "admin"
 
 export default function LoginClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const login = useGiftraStore((state) => state.login)
+  const setCurrentUser = useGiftraStore((state) => state.setCurrentUser)
 
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
+
+  const getRedirectPath = (role: UserRole) => {
+    const redirect = searchParams.get("redirect")
+    if (
+      redirect?.startsWith("/") &&
+      !redirect.startsWith("//") &&
+      !(
+        (redirect.startsWith("/admin") && role !== "admin") ||
+        (redirect.startsWith("/artist") && role !== "artist") ||
+        (redirect.startsWith("/customer") && role !== "customer")
+      )
+    ) {
+      return redirect
+    }
+
+    return `/${role}/dashboard`
+  }
 
   const handleDemoLogin = (role: UserRole) => {
+    if (!isDemoAuthAllowed) {
+      setError("Demo login is available only when Supabase is not configured.")
+      setIsLoading(false)
+      return
+    }
+
     setIsLoading(true)
+    setError("")
+    document.cookie = `giftra_demo_role=${role}; path=/; max-age=86400; samesite=lax`
 
     login(role)
 
     setTimeout(() => {
-      const redirect = searchParams.get("redirect")
-      router.push(redirect || `/${role}/dashboard`)
+      router.push(getRedirectPath(role))
     }, 500)
   }
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    handleDemoLogin("customer")
+    setIsLoading(true)
+    setError("")
+
+    if (!hasSupabaseConfig) {
+      handleDemoLogin("customer")
+      return
+    }
+
+    try {
+      const { data, error: signInError } = await signIn(email, password)
+
+      if (signInError) {
+        setError(signInError.message)
+        setIsLoading(false)
+        return
+      }
+
+      const profile = await getCurrentProfile()
+      const metadataRole = data.user?.user_metadata?.role
+      const role = isUserRole(profile?.role)
+        ? profile.role
+        : isUserRole(metadataRole)
+          ? metadataRole
+          : "customer"
+
+      setCurrentUser({
+        id: data.user.id,
+        email: data.user.email ?? email,
+        name: profile?.full_name || data.user.email || email,
+        role,
+        avatar: profile?.avatar_url ?? undefined,
+        createdAt: new Date(data.user.created_at),
+      })
+      router.push(getRedirectPath(role))
+    } catch {
+      setError("Unable to sign in. Please try again.")
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -71,6 +140,12 @@ export default function LoginClient() {
 
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {error ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              ) : null}
+
               {/* Email */}
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
@@ -83,6 +158,7 @@ export default function LoginClient() {
                     className="pl-10"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    required
                   />
                 </div>
               </div>
@@ -99,6 +175,7 @@ export default function LoginClient() {
                     className="pl-10 pr-10"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    required
                   />
 
                   <button

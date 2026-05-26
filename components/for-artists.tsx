@@ -1,3 +1,4 @@
+import Image from "next/image"
 import { ArrowRight, Check } from "lucide-react"
 
 const benefits = [
@@ -13,10 +14,12 @@ export function ForArtists() {
   <div className="mx-auto max-w-6xl">
     <div className="grid items-center gap-12 lg:grid-cols-2">
       <div className="relative">
-        <div className="aspect-[4/3] overflow-hidden rounded-3xl bg-gray-100">
-          <img
+        <div className="relative aspect-[4/3] overflow-hidden rounded-3xl bg-gray-100">
+          <Image
             src="/artist-workspace-creative-studio-warm-lighting.jpg"
             alt="Artist creative workspace"
+            fill
+            sizes="(min-width: 1024px) 50vw, 100vw"
             className="h-full w-full object-cover"
           />
         </div>

@@ -269,6 +269,7 @@ interface GiftraStore {
   
   // Actions
   login: (role: UserRole) => void
+  setCurrentUser: (user: User) => void
   logout: () => void
   
   // Request Actions
@@ -308,6 +309,10 @@ export const useGiftraStore = create<GiftraStore>((set, get) => ({
     if (user) {
       set({ currentUser: user, isAuthenticated: true })
     }
+  },
+
+  setCurrentUser: (user: User) => {
+    set({ currentUser: user, isAuthenticated: true })
   },
   
   logout: () => {

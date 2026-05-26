@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -8,7 +9,6 @@ import {
   LayoutDashboard, 
   MessageSquare, 
   Package, 
-  Settings, 
   LogOut,
   User,
   Palette,
@@ -16,6 +16,8 @@ import {
 } from "lucide-react"
 import { useGiftraStore, type UserRole } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { getCurrentProfile, getCurrentUser, signOut } from "@/lib/supabase/queries"
+import { hasSupabaseConfig } from "@/lib/supabase/config"
 
 const roleNavItems: Record<UserRole, { href: string; label: string; icon: React.ElementType }[]> = {
   customer: [
@@ -45,7 +47,68 @@ const roleIcons: Record<UserRole, React.ElementType> = {
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { currentUser, logout, isAuthenticated } = useGiftraStore()
+  const { currentUser, logout, isAuthenticated, setCurrentUser } = useGiftraStore()
+  const [isHydratingAuth, setIsHydratingAuth] = useState(hasSupabaseConfig)
+
+  useEffect(() => {
+    if (!hasSupabaseConfig || isAuthenticated) {
+      setIsHydratingAuth(false)
+      return
+    }
+
+    let isMounted = true
+
+    async function hydrateAuth() {
+      try {
+        const [{ user }, profile] = await Promise.all([
+          getCurrentUser(),
+          getCurrentProfile(),
+        ])
+
+        if (!isMounted || !user) return
+
+        setCurrentUser({
+          id: user.id,
+          email: user.email ?? profile?.email ?? "",
+          name: profile?.full_name || user.email || "Giftra user",
+          role: profile?.role ?? "customer",
+          avatar: profile?.avatar_url ?? undefined,
+          createdAt: new Date(user.created_at),
+        })
+      } finally {
+        if (isMounted) {
+          setIsHydratingAuth(false)
+        }
+      }
+    }
+
+    hydrateAuth()
+
+    return () => {
+      isMounted = false
+    }
+  }, [isAuthenticated, setCurrentUser])
+
+  useEffect(() => {
+    if (!currentUser) return
+
+    const isWrongRoleRoute =
+      (pathname.startsWith("/admin") && currentUser.role !== "admin") ||
+      (pathname.startsWith("/artist") && currentUser.role !== "artist") ||
+      (pathname.startsWith("/customer") && currentUser.role !== "customer")
+
+    if (isWrongRoleRoute) {
+      router.replace(`/${currentUser.role}/dashboard`)
+    }
+  }, [currentUser, pathname, router])
+
+  if (isHydratingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    )
+  }
 
   if (!isAuthenticated || !currentUser) {
     return (
@@ -63,7 +126,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const navItems = roleNavItems[currentUser.role]
   const RoleIcon = roleIcons[currentUser.role]
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    document.cookie = "giftra_demo_role=; path=/; max-age=0; samesite=lax"
+    if (hasSupabaseConfig) {
+      await signOut()
+    }
     logout()
     router.push("/")
   }

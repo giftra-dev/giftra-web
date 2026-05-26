@@ -39,7 +39,7 @@ const statusLabels: Record<RequestStatus, string> = {
 
 function CustomerDashboardContent() {
   const [createOpen, setCreateOpen] = useState(false)
-  const { currentUser, requests, chatRooms, orders } = useGiftraStore()
+  const { currentUser, requests, chatRooms } = useGiftraStore()
 
   if (!currentUser) return null
 

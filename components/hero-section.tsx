@@ -1,3 +1,4 @@
+import Image from "next/image"
 import { ArrowRight, Sparkles } from "lucide-react"
 
 export function HeroSection() {
@@ -32,9 +33,11 @@ export function HeroSection() {
           </div>
           <div className="relative hidden lg:block">
             <div className="relative aspect-square rounded-3xl bg-secondary p-8">
-              <img
+              <Image
                 src="/artistic-gift-boxes-with-ribbons-and-handmade-craf.jpg"
                 alt="Custom handmade gifts and artistic creations"
+                fill
+                sizes="(min-width: 1024px) 50vw, 100vw"
                 className="h-full w-full rounded-2xl object-cover"
               />
               <div className="absolute -bottom-4 -left-4 rounded-2xl bg-card p-4 shadow-lg">

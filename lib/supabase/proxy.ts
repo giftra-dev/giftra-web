@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { hasSupabaseConfig, isDemoAuthAllowed } from './config'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -7,17 +8,29 @@ export async function updateSession(request: NextRequest) {
   })
 
   // Check if Supabase is configured - if not, allow demo mode
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const protectedPaths = ['/customer', '/artist', '/admin', '/chat']
+  const isProtectedPath = protectedPaths.some(path =>
+    request.nextUrl.pathname.startsWith(path)
+  )
 
-  if (!supabaseUrl || !supabaseAnonKey) {
-    // Supabase not configured - allow demo mode to work
-    return supabaseResponse
+  if (!hasSupabaseConfig) {
+    if (!isProtectedPath) {
+      return supabaseResponse
+    }
+
+    if (isDemoAuthAllowed && request.cookies.has('giftra_demo_role')) {
+      return supabaseResponse
+    }
+
+    const url = request.nextUrl.clone()
+    url.pathname = '/auth/login'
+    url.searchParams.set('redirect', request.nextUrl.pathname)
+    return NextResponse.redirect(url)
   }
 
   const supabase = createServerClient(
-    supabaseUrl,
-    supabaseAnonKey,
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         getAll() {
@@ -42,16 +55,36 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Protect dashboard routes (only when Supabase is configured)
-  const protectedPaths = ['/customer', '/artist', '/admin', '/chat']
-  const isProtectedPath = protectedPaths.some(path => 
-    request.nextUrl.pathname.startsWith(path)
-  )
-
   if (isProtectedPath && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/auth/login'
+    url.searchParams.set('redirect', request.nextUrl.pathname)
     return NextResponse.redirect(url)
+  }
+
+  const requiredRole = request.nextUrl.pathname.startsWith('/admin')
+    ? 'admin'
+    : request.nextUrl.pathname.startsWith('/artist')
+      ? 'artist'
+      : request.nextUrl.pathname.startsWith('/customer')
+        ? 'customer'
+        : null
+
+  if (user && requiredRole) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    const role = profile?.role
+
+    if (role && role !== requiredRole) {
+      const url = request.nextUrl.clone()
+      url.pathname = `/${role}/dashboard`
+      url.search = ''
+      return NextResponse.redirect(url)
+    }
   }
 
   return supabaseResponse

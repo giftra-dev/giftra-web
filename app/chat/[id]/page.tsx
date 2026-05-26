@@ -1,6 +1,7 @@
 "use client"
 
 import { use, useState, useRef, useEffect } from "react"
+import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -8,7 +9,6 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
 import { 
   ArrowLeft, 
   Send, 
@@ -23,7 +23,6 @@ import {
   Upload,
   CreditCard,
   Check,
-  FileText,
   Info
 } from "lucide-react"
 import { useGiftraStore, type ChatStatus, type Message, type UserRole } from "@/lib/store"
@@ -292,9 +291,12 @@ function ChatPageContent({ chatId }: { chatId: string }) {
                           : "bg-muted"
                       )}>
                         {msg.type === "image" && msg.imageUrl && (
-                          <img 
+                          <Image
                             src={msg.imageUrl} 
                             alt="Shared image" 
+                            width={640}
+                            height={360}
+                            unoptimized
                             className="rounded-md max-w-full mb-2"
                           />
                         )}
@@ -332,7 +334,7 @@ function ChatPageContent({ chatId }: { chatId: string }) {
                   placeholder={chatRoom.isLocked ? "Chat is locked" : "Type a message..."}
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyPress={handleKeyPress}
+                  onKeyDown={handleKeyPress}
                   disabled={chatRoom.isLocked}
                   className="flex-1"
                 />
