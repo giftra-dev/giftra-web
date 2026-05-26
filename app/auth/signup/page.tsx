@@ -6,32 +6,83 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Gift, Mail, Lock, Eye, EyeOff, User, Palette, Shield } from "lucide-react"
+import { Gift, Mail, Lock, Eye, EyeOff, User, Palette } from "lucide-react"
 import { useGiftraStore, type UserRole } from "@/lib/store"
+import { signUp } from "@/lib/supabase/queries"
+import { hasSupabaseConfig, isDemoAuthAllowed } from "@/lib/supabase/config"
+
+const isSignupRole = (role: unknown): role is Exclude<UserRole, "admin"> =>
+  role === "customer" || role === "artist"
 
 function SignupForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const login = useGiftraStore(state => state.login)
+  const setCurrentUser = useGiftraStore(state => state.setCurrentUser)
+  const initialRole = searchParams.get("role")
   
   const [showPassword, setShowPassword] = useState(false)
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [role, setRole] = useState<UserRole>(
-    (searchParams.get("role") as UserRole) || "customer"
+  const [role, setRole] = useState<Exclude<UserRole, "admin">>(
+    isSignupRole(initialRole) ? initialRole : "customer"
   )
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    login(role)
-    setTimeout(() => {
-      router.push(`/${role}/dashboard`)
-    }, 500)
+    setError("")
+    setSuccess("")
+
+    if (!hasSupabaseConfig) {
+      if (!isDemoAuthAllowed) {
+        setError("Supabase is not configured.")
+        setIsLoading(false)
+        return
+      }
+
+      document.cookie = `giftra_demo_role=${role}; path=/; max-age=86400; samesite=lax`
+      login(role)
+      setTimeout(() => {
+        router.push(`/${role}/dashboard`)
+      }, 500)
+      return
+    }
+
+    try {
+      const { data, error: signUpError } = await signUp(email, password, name, role)
+
+      if (signUpError) {
+        setError(signUpError.message)
+        setIsLoading(false)
+        return
+      }
+
+      if (data.session) {
+        setCurrentUser({
+          id: data.user?.id ?? crypto.randomUUID(),
+          email,
+          name,
+          role,
+          createdAt: data.user?.created_at ? new Date(data.user.created_at) : new Date(),
+        })
+        router.push(`/${role}/dashboard`)
+        return
+      }
+
+      setSuccess("Check your email to confirm your account before signing in.")
+    } catch {
+      setError("Unable to create your account. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -57,6 +108,17 @@ function SignupForm() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {error ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              ) : null}
+              {success ? (
+                <Alert>
+                  <AlertDescription>{success}</AlertDescription>
+                </Alert>
+              ) : null}
+
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name</Label>
                 <div className="relative">
@@ -68,6 +130,7 @@ function SignupForm() {
                     className="pl-10"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
+                    required
                   />
                 </div>
               </div>
@@ -82,6 +145,7 @@ function SignupForm() {
                     className="pl-10"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    required
                   />
                 </div>
               </div>
@@ -96,6 +160,8 @@ function SignupForm() {
                     className="pl-10 pr-10"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    minLength={8}
+                    required
                   />
                   <button
                     type="button"
@@ -109,7 +175,7 @@ function SignupForm() {
 
               <div className="space-y-3">
                 <Label>I want to join as</Label>
-                <RadioGroup value={role} onValueChange={(v) => setRole(v as UserRole)}>
+                <RadioGroup value={role} onValueChange={(v) => setRole(v as Exclude<UserRole, "admin">)}>
                   <div className="grid grid-cols-2 gap-3">
                     <Label
                       htmlFor="customer"
