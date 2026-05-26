@@ -95,8 +95,15 @@ export default function LoginClient() {
         return
       }
 
+      if (!data.user) {
+        setError("Unable to sign in. Please try again.")
+        setIsLoading(false)
+        return
+      }
+
       const profile = await getCurrentProfile()
-      const metadataRole = data.user?.user_metadata?.role
+      const user = data.user
+      const metadataRole = user.user_metadata?.role
       const role = isUserRole(profile?.role)
         ? profile.role
         : isUserRole(metadataRole)
@@ -104,12 +111,12 @@ export default function LoginClient() {
           : "customer"
 
       setCurrentUser({
-        id: data.user.id,
-        email: data.user.email ?? normalizedEmail,
-        name: profile?.full_name || data.user.email || normalizedEmail,
+        id: user.id,
+        email: user.email ?? normalizedEmail,
+        name: profile?.full_name || user.email || normalizedEmail,
         role,
         avatar: profile?.avatar_url ?? undefined,
-        createdAt: new Date(data.user.created_at),
+        createdAt: new Date(user.created_at),
       })
       router.push(getRedirectPath(role))
     } catch {
