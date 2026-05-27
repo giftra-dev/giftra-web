@@ -26,6 +26,7 @@ import {
   Info
 } from "lucide-react"
 import { useGiftraStore, type ChatStatus, type Message, type UserRole } from "@/lib/store"
+import { protectedChatWarning, validateChatMessage } from "@/lib/giftra/message-policy"
 import { cn } from "@/lib/utils"
 
 const chatStatusLabels: Record<ChatStatus, string> = {
@@ -44,19 +45,6 @@ const chatStatusColors: Record<ChatStatus, string> = {
   in_progress: "bg-primary/10 text-primary border-primary/30",
   paused: "bg-muted text-muted-foreground",
   completed: "bg-success/10 text-success-foreground border-success/30",
-}
-
-// Regex patterns for detecting contact info
-const contactPatterns = [
-  /\b\d{10,}\b/, // Phone numbers
-  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/, // Email
-  /@[a-zA-Z0-9_]{1,30}/, // Instagram/Twitter handles
-  /wa\.me|whatsapp/i, // WhatsApp links
-  /\b(phone|call|text|whatsapp|instagram|telegram|signal)\s*:?\s*\d/i, // Contact hints
-]
-
-function detectContactInfo(text: string): boolean {
-  return contactPatterns.some(pattern => pattern.test(text))
 }
 
 function ChatPageContent({ chatId }: { chatId: string }) {
@@ -133,8 +121,9 @@ function ChatPageContent({ chatId }: { chatId: string }) {
   const handleSendMessage = () => {
     if (!messageInput.trim() || chatRoom.isLocked) return
 
-    // Check for contact info
-    if (detectContactInfo(messageInput)) {
+    const validation = validateChatMessage(messageInput)
+
+    if (!validation.valid) {
       setContactWarning(true)
       return
     }
@@ -315,7 +304,7 @@ function ChatPageContent({ chatId }: { chatId: string }) {
             <div className="px-4 py-3 bg-destructive/10 border-t border-destructive/30 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-destructive" />
               <p className="text-sm text-destructive flex-1">
-                To keep your order protected, communication must stay on Giftra. Please remove contact information.
+                {protectedChatWarning}. Please remove contact information.
               </p>
               <Button size="sm" variant="ghost" onClick={() => setContactWarning(false)}>
                 Dismiss
