@@ -76,25 +76,26 @@ function CustomerRequestsContent() {
   useEffect(() => {
     async function loadData() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        setLoading(false)
+        return
+      }
       
       setUserId(user.id)
       
-      const { data: requestsData } = await getCustomerRequests(supabase, user.id)
+      const requestsData = await getCustomerRequests(user.id)
       
-      if (requestsData) {
-        // Load chat rooms for each request
-        const requestsWithChat = await Promise.all(
-          requestsData.map(async (req) => {
-            const { data: chatRoom } = await getChatRoomByRequestId(supabase, req.id)
-            return {
-              ...req,
-              chat_room_id: chatRoom?.id || null
-            }
-          })
-        )
-        setRequests(requestsWithChat as RequestWithChat[])
-      }
+      // Load chat rooms for each request
+      const requestsWithChat = await Promise.all(
+        requestsData.map(async (req) => {
+          const chatRoom = await getChatRoomByRequestId(req.id)
+          return {
+            ...req,
+            chat_room_id: chatRoom?.id || null
+          }
+        })
+      )
+      setRequests(requestsWithChat as RequestWithChat[])
       setLoading(false)
     }
     
@@ -112,19 +113,17 @@ function CustomerRequestsContent() {
 
   const handleRequestCreated = async () => {
     if (!userId) return
-    const { data: requestsData } = await getCustomerRequests(supabase, userId)
-    if (requestsData) {
-      const requestsWithChat = await Promise.all(
-        requestsData.map(async (req) => {
-          const { data: chatRoom } = await getChatRoomByRequestId(supabase, req.id)
-          return {
-            ...req,
-            chat_room_id: chatRoom?.id || null
-          }
-        })
-      )
-      setRequests(requestsWithChat as RequestWithChat[])
-    }
+    const requestsData = await getCustomerRequests(userId)
+    const requestsWithChat = await Promise.all(
+      requestsData.map(async (req) => {
+        const chatRoom = await getChatRoomByRequestId(req.id)
+        return {
+          ...req,
+          chat_room_id: chatRoom?.id || null
+        }
+      })
+    )
+    setRequests(requestsWithChat as RequestWithChat[])
   }
 
   if (loading) {

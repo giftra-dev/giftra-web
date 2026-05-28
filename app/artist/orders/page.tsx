@@ -103,31 +103,32 @@ function ArtistOrdersContent() {
 
   async function loadOrders() {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    
-    const { data: ordersData } = await getArtistOrders(supabase, user.id)
-    
-    if (ordersData) {
-      const ordersWithChat = await Promise.all(
-        ordersData.map(async (order: any) => {
-          const { data: chatRoom } = await getChatRoomByRequestId(supabase, order.request_id)
-          return {
-            id: order.id,
-            order_number: order.order_number,
-            status: order.status,
-            subtotal: order.subtotal,
-            platform_fee: order.platform_fee,
-            total: order.total,
-            created_at: order.created_at,
-            updated_at: order.updated_at,
-            request: order.requests,
-            customer: order.customer,
-            chat_room_id: chatRoom?.id || null
-          }
-        })
-      )
-      setOrders(ordersWithChat as OrderWithDetails[])
+    if (!user) {
+      setLoading(false)
+      return
     }
+    
+    const ordersData = await getArtistOrders(user.id)
+    
+    const ordersWithChat = await Promise.all(
+      ordersData.map(async (order) => {
+        const chatRoom = await getChatRoomByRequestId(order.request_id)
+        return {
+          id: order.id,
+          order_number: order.order_number,
+          status: order.status,
+          subtotal: order.subtotal,
+          platform_fee: order.platform_fee,
+          total: order.total,
+          created_at: order.created_at,
+          updated_at: order.updated_at,
+          request: order.request,
+          customer: order.customer,
+          chat_room_id: chatRoom?.id || null
+        }
+      })
+    )
+    setOrders(ordersWithChat as OrderWithDetails[])
     setLoading(false)
   }
 
@@ -139,7 +140,7 @@ function ArtistOrdersContent() {
     }
     
     setUpdating(true)
-    await updateOrderStatus(supabase, order.id, newStatus)
+    await updateOrderStatus(order.id, newStatus)
     await loadOrders()
     setUpdating(false)
   }
@@ -147,7 +148,10 @@ function ArtistOrdersContent() {
   const handleShipOrder = async () => {
     if (!selectedOrder) return
     setUpdating(true)
-    await updateOrderStatus(supabase, selectedOrder.id, "shipped", trackingNumber)
+    await updateOrderStatus(selectedOrder.id, "shipped", {
+      tracking_number: trackingNumber,
+      shipped_at: new Date().toISOString(),
+    })
     setUpdateDialogOpen(false)
     setSelectedOrder(null)
     setTrackingNumber("")
