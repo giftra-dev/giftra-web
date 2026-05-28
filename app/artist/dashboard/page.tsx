@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
@@ -13,11 +14,19 @@ import {
   Clock,
   Star
 } from "lucide-react"
-import { useGiftraStore, type OrderStatus } from "@/lib/store"
+import { 
+  getCurrentUser,
+  getArtistOrders, 
+  getArtistStats,
+  getUserChatRooms,
+} from "@/lib/supabase/queries"
+import type { OrderWithRelations, ChatRoomWithRelations } from "@/lib/types/database"
+import { ORDER_STATUS_LABELS, CATEGORY_LABELS } from "@/lib/types/database"
 
-const orderStatusColors: Record<OrderStatus, string> = {
+const orderStatusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
   awaiting_payment: "bg-warning/20 text-warning-foreground",
+  paid: "bg-success/20 text-success-foreground",
   in_progress: "bg-primary/20 text-primary",
   preview_shared: "bg-info/20 text-info-foreground",
   revision_requested: "bg-accent text-accent-foreground",
@@ -28,42 +37,66 @@ const orderStatusColors: Record<OrderStatus, string> = {
   refunded: "bg-destructive/20 text-destructive-foreground",
 }
 
-const orderStatusLabels: Record<OrderStatus, string> = {
-  draft: "Draft",
-  awaiting_payment: "Awaiting Payment",
-  in_progress: "In Progress",
-  preview_shared: "Preview Shared",
-  revision_requested: "Revision Requested",
-  ready_to_ship: "Ready to Ship",
-  shipped: "Shipped",
-  delivered: "Delivered",
-  completed: "Completed",
-  refunded: "Refunded",
-}
-
 function ArtistDashboardContent() {
-  const { currentUser, orders, requests, chatRooms, users } = useGiftraStore()
+  const [orders, setOrders] = useState<OrderWithRelations[]>([])
+  const [chatRooms, setChatRooms] = useState<ChatRoomWithRelations[]>([])
+  const [stats, setStats] = useState({
+    activeOrders: 0,
+    completedOrders: 0,
+    totalEarnings: 0,
+    averageRating: 0,
+    totalReviews: 0,
+    pendingMessages: 0,
+  })
+  const [isLoading, setIsLoading] = useState(true)
 
-  if (!currentUser) return null
+  const loadData = useCallback(async () => {
+    try {
+      const { user } = await getCurrentUser()
+      if (!user) return
 
-  const myOrders = orders.filter(o => o.artistId === currentUser.id)
-  const activeOrders = myOrders.filter(o => !["completed", "refunded", "delivered"].includes(o.status))
-  const myChats = chatRooms.filter(c => c.artistId === currentUser.id && !c.isLocked)
-  
-  // Calculate earnings
-  const totalEarnings = myOrders
-    .filter(o => o.status === "completed")
-    .reduce((sum, o) => sum + o.totalAmount * 0.8, 0) // 80% goes to artist
-  
-  const pendingEarnings = myOrders
-    .filter(o => ["in_progress", "preview_shared", "ready_to_ship", "shipped", "delivered"].includes(o.status))
-    .reduce((sum, o) => sum + o.totalAmount * 0.8, 0)
+      const [ordersData, statsData, chatsData] = await Promise.all([
+        getArtistOrders(user.id),
+        getArtistStats(user.id),
+        getUserChatRooms(user.id, 'artist'),
+      ])
+
+      setOrders(ordersData)
+      setStats(statsData)
+      setChatRooms(chatsData)
+    } catch (error) {
+      console.error('Error loading dashboard data:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  const activeOrders = orders.filter(o => !['completed', 'refunded', 'delivered'].includes(o.status))
+
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="animate-pulse space-y-6">
+          <div className="h-8 bg-muted rounded w-1/3"></div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-24 bg-muted rounded"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold">Welcome back, {currentUser.name.split(" ")[0]}!</h1>
+        <h1 className="text-2xl font-bold">Artist Dashboard</h1>
         <p className="text-muted-foreground">Manage your orders and collaborate with customers</p>
       </div>
 
@@ -77,7 +110,7 @@ function ArtistDashboardContent() {
             <Package className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{activeOrders.length}</div>
+            <div className="text-2xl font-bold">{stats.activeOrders}</div>
             <p className="text-xs text-muted-foreground mt-1">
               Currently working on
             </p>
@@ -91,7 +124,7 @@ function ArtistDashboardContent() {
             <MessageSquare className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{myChats.length}</div>
+            <div className="text-2xl font-bold">{chatRooms.length}</div>
             <p className="text-xs text-muted-foreground mt-1">
               Conversations in progress
             </p>
@@ -100,28 +133,30 @@ function ArtistDashboardContent() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Pending Earnings
+              Total Earned
             </CardTitle>
             <DollarSign className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${pendingEarnings.toFixed(0)}</div>
+            <div className="text-2xl font-bold">${stats.totalEarnings.toFixed(0)}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              From active orders
+              From completed orders
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Earned
+              Rating
             </CardTitle>
             <Star className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${totalEarnings.toFixed(0)}</div>
+            <div className="text-2xl font-bold">
+              {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : '-'}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
-              From completed orders
+              {stats.totalReviews} reviews
             </p>
           </CardContent>
         </Card>
@@ -152,10 +187,8 @@ function ArtistDashboardContent() {
             </div>
           ) : (
             <div className="space-y-4">
-              {activeOrders.map((order) => {
-                const request = requests.find(r => r.id === order.requestId)
-                const customer = users.find(u => u.id === order.customerId)
-                const chatRoom = chatRooms.find(c => c.orderId === order.id)
+              {activeOrders.slice(0, 5).map((order) => {
+                const chatRoom = chatRooms.find(c => c.request_id === order.request_id)
 
                 return (
                   <div
@@ -164,27 +197,31 @@ function ArtistDashboardContent() {
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-1">
-                        <h3 className="font-medium">{request?.category}</h3>
+                        <h3 className="font-medium">
+                          {order.request?.title || (order.request?.category && CATEGORY_LABELS[order.request.category]) || 'Order'}
+                        </h3>
                         <Badge variant="outline" className={orderStatusColors[order.status]}>
-                          {orderStatusLabels[order.status]}
+                          {ORDER_STATUS_LABELS[order.status] || order.status}
                         </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground truncate">
-                        {request?.description}
+                        {order.request?.description}
                       </p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                        <span>Customer: {customer?.name}</span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          Due: {request && new Date(request.deadline).toLocaleDateString()}
-                        </span>
+                        <span>Customer: {order.customer?.full_name || 'Unknown'}</span>
+                        {order.request?.deadline && (
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            Due: {new Date(order.request.deadline).toLocaleDateString()}
+                          </span>
+                        )}
                         <span className="text-primary font-medium">
-                          ${order.totalAmount}
+                          ${order.subtotal}
                         </span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
-                      {chatRoom && !chatRoom.isLocked && (
+                      {chatRoom && (
                         <Link href={`/chat/${chatRoom.id}`}>
                           <Button size="sm" variant="outline" className="gap-1">
                             <MessageSquare className="w-4 h-4" />

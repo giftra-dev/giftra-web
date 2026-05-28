@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   Dialog,
@@ -21,48 +20,45 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useGiftraStore } from "@/lib/store"
-import { hasSupabaseConfig } from "@/lib/supabase/config"
-import { createGiftRequest } from "@/lib/supabase/workflow"
+import { createRequest, getCurrentUser, uploadFileToStorage } from "@/lib/supabase/queries"
 import type { GiftCategory } from "@/lib/types/database"
+import { CATEGORY_LABELS } from "@/lib/types/database"
 import { Calendar, DollarSign, Upload } from "lucide-react"
 
-const categories: { label: string; value: GiftCategory }[] = [
-  { label: "Portrait", value: "portrait" },
-  { label: "Digital Art", value: "digital_art" },
-  { label: "Custom Jewelry", value: "custom_jewelry" },
-  { label: "Caricature", value: "caricature" },
-  { label: "Calligraphy", value: "calligraphy" },
-  { label: "Illustration", value: "illustration" },
-  { label: "Woodwork", value: "woodwork" },
-  { label: "Pottery", value: "pottery" },
-  { label: "Textile", value: "textile" },
-  { label: "Other", value: "other" },
-]
+const categories: { label: string; value: GiftCategory }[] = Object.entries(CATEGORY_LABELS).map(
+  ([value, label]) => ({ value: value as GiftCategory, label })
+)
 
 interface CreateRequestDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onSuccess?: () => void
 }
 
-export function CreateRequestDialog({ open, onOpenChange }: CreateRequestDialogProps) {
-  const router = useRouter()
-  const createRequest = useGiftraStore(state => state.createRequest)
+export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateRequestDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   
+  const [title, setTitle] = useState("")
   const [category, setCategory] = useState<GiftCategory | "">("")
   const [description, setDescription] = useState("")
+  const [recipientName, setRecipientName] = useState("")
+  const [occasion, setOccasion] = useState("")
   const [budgetMin, setBudgetMin] = useState("")
   const [budgetMax, setBudgetMax] = useState("")
   const [deadline, setDeadline] = useState("")
+  const [referenceFiles, setReferenceFiles] = useState<File[]>([])
 
   const resetForm = () => {
+    setTitle("")
     setCategory("")
     setDescription("")
+    setRecipientName("")
+    setOccasion("")
     setBudgetMin("")
     setBudgetMax("")
     setDeadline("")
+    setReferenceFiles([])
     setError("")
   }
 
@@ -87,33 +83,43 @@ export function CreateRequestDialog({ open, onOpenChange }: CreateRequestDialogP
     }
 
     try {
-      if (hasSupabaseConfig) {
-        const { error: requestError } = await createGiftRequest({
-          category,
-          description,
-          budget_min: minBudget,
-          budget_max: maxBudget,
-          deadline,
-          reference_images: [],
-        })
+      const { user } = await getCurrentUser()
+      if (!user) {
+        throw new Error("Please sign in before creating a request.")
+      }
 
-        if (requestError) {
-          throw requestError
-        }
-      } else {
-        createRequest({
-          category,
-          description,
-          budgetMin: minBudget,
-          budgetMax: maxBudget,
-          deadline: new Date(deadline),
-          referenceImages: [],
+      const referenceImages = await Promise.all(
+        referenceFiles.map(async (file) => {
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-")
+          const { url, error: uploadError } = await uploadFileToStorage(
+            "reference-images",
+            `${user.id}/${Date.now()}-${safeName}`,
+            file
+          )
+          if (uploadError) throw uploadError
+          return url
         })
+      )
+
+      const { data, error: requestError } = await createRequest({
+        title: title || `${CATEGORY_LABELS[category]} Request`,
+        category,
+        description,
+        recipient_name: recipientName || undefined,
+        occasion: occasion || undefined,
+        budget_min: minBudget,
+        budget_max: maxBudget,
+        deadline: deadline || undefined,
+        reference_images: referenceImages.filter((url): url is string => Boolean(url)),
+      })
+
+      if (requestError) {
+        throw requestError
       }
 
       onOpenChange(false)
       resetForm()
-      router.refresh()
+      onSuccess?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create request.")
     } finally {
@@ -128,7 +134,7 @@ export function CreateRequestDialog({ open, onOpenChange }: CreateRequestDialogP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create Gift Request</DialogTitle>
           <DialogDescription>
@@ -144,7 +150,17 @@ export function CreateRequestDialog({ open, onOpenChange }: CreateRequestDialogP
           ) : null}
 
           <div className="space-y-2">
-            <Label htmlFor="category">Category</Label>
+            <Label htmlFor="title">Title (Optional)</Label>
+            <Input
+              id="title"
+              placeholder="e.g., Family Portrait for Anniversary"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="category">Category *</Label>
             <Select
               value={category}
               onValueChange={(value) => setCategory(value as GiftCategory)}
@@ -155,7 +171,7 @@ export function CreateRequestDialog({ open, onOpenChange }: CreateRequestDialogP
               </SelectTrigger>
               <SelectContent>
                 {categories.map((cat) => (
-                  <SelectItem key={`${cat.value}-${cat.label}`} value={cat.value}>
+                  <SelectItem key={cat.value} value={cat.value}>
                     {cat.label}
                   </SelectItem>
                 ))}
@@ -164,7 +180,7 @@ export function CreateRequestDialog({ open, onOpenChange }: CreateRequestDialogP
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
+            <Label htmlFor="description">Description *</Label>
             <Textarea
               id="description"
               placeholder="Describe your gift idea in detail... (style, colors, size, special requirements)"
@@ -177,7 +193,28 @@ export function CreateRequestDialog({ open, onOpenChange }: CreateRequestDialogP
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="budgetMin">Min Budget ($)</Label>
+              <Label htmlFor="recipientName">Recipient Name</Label>
+              <Input
+                id="recipientName"
+                placeholder="Who is this gift for?"
+                value={recipientName}
+                onChange={(e) => setRecipientName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="occasion">Occasion</Label>
+              <Input
+                id="occasion"
+                placeholder="e.g., Birthday, Anniversary"
+                value={occasion}
+                onChange={(e) => setOccasion(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="budgetMin">Min Budget ($) *</Label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -193,7 +230,7 @@ export function CreateRequestDialog({ open, onOpenChange }: CreateRequestDialogP
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="budgetMax">Max Budget ($)</Label>
+              <Label htmlFor="budgetMax">Max Budget ($) *</Label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -221,22 +258,30 @@ export function CreateRequestDialog({ open, onOpenChange }: CreateRequestDialogP
                 value={deadline}
                 onChange={(e) => setDeadline(e.target.value)}
                 min={minDateStr}
-                required
               />
             </div>
           </div>
 
           <div className="space-y-2">
             <Label>Reference Images (Optional)</Label>
-            <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer">
+            <label className="block border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer">
               <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">
-                Drag and drop images here, or click to browse
+                {referenceFiles.length > 0
+                  ? `${referenceFiles.length} file${referenceFiles.length === 1 ? "" : "s"} selected`
+                  : "Drag and drop images here, or click to browse"}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 PNG, JPG up to 10MB each
               </p>
-            </div>
+              <Input
+                type="file"
+                accept="image/*"
+                multiple
+                className="sr-only"
+                onChange={(event) => setReferenceFiles(Array.from(event.target.files || []))}
+              />
+            </label>
           </div>
 
           <div className="flex justify-end gap-3 pt-4">

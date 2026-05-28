@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
@@ -14,46 +14,89 @@ import {
   ArrowRight,
   Calendar
 } from "lucide-react"
-import { useGiftraStore, type RequestStatus } from "@/lib/store"
 import { CreateRequestDialog } from "@/components/create-request-dialog"
+import { 
+  getCurrentUser,
+  getCustomerRequests, 
+  getCustomerStats,
+  getUserChatRooms,
+  getChatRoomByRequestId
+} from "@/lib/supabase/queries"
+import type { RequestWithRelations, ChatRoomWithRelations } from "@/lib/types/database"
+import { REQUEST_STATUS_LABELS, CATEGORY_LABELS } from "@/lib/types/database"
 
-const statusColors: Record<RequestStatus, string> = {
-  pending: "bg-muted text-muted-foreground",
-  admin_review: "bg-warning/20 text-warning-foreground border-warning/30",
-  artist_assigned: "bg-info/20 text-info-foreground border-info/30",
-  awaiting_payment: "bg-accent text-accent-foreground",
+const statusColors: Record<string, string> = {
+  pending_review: "bg-warning/20 text-warning-foreground border-warning/30",
+  approved: "bg-info/20 text-info-foreground border-info/30",
+  assigned: "bg-info/20 text-info-foreground border-info/30",
   in_progress: "bg-primary/20 text-primary border-primary/30",
   completed: "bg-success/20 text-success-foreground border-success/30",
+  delivered: "bg-success/20 text-success-foreground border-success/30",
   cancelled: "bg-destructive/20 text-destructive-foreground border-destructive/30",
-}
-
-const statusLabels: Record<RequestStatus, string> = {
-  pending: "Pending",
-  admin_review: "Under Review",
-  artist_assigned: "Artist Assigned",
-  awaiting_payment: "Awaiting Payment",
-  in_progress: "In Progress",
-  completed: "Completed",
-  cancelled: "Cancelled",
+  rejected: "bg-destructive/20 text-destructive-foreground border-destructive/30",
 }
 
 function CustomerDashboardContent() {
   const [createOpen, setCreateOpen] = useState(false)
-  const { currentUser, requests, chatRooms } = useGiftraStore()
+  const [requests, setRequests] = useState<RequestWithRelations[]>([])
+  const [chatRooms, setChatRooms] = useState<ChatRoomWithRelations[]>([])
+  const [stats, setStats] = useState({ totalRequests: 0, activeRequests: 0, completedOrders: 0, pendingMessages: 0 })
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  if (!currentUser) return null
+  const loadData = useCallback(async () => {
+    try {
+      const { user } = await getCurrentUser()
+      if (!user) return
 
-  const myRequests = requests.filter(r => r.customerId === currentUser.id)
-  const activeRequests = myRequests.filter(r => !["completed", "cancelled"].includes(r.status))
-  const myChats = chatRooms.filter(c => c.customerId === currentUser.id)
-  const unreadChats = myChats.filter(c => !c.isLocked).length
+      setCurrentUserId(user.id)
+
+      const [requestsData, statsData, chatsData] = await Promise.all([
+        getCustomerRequests(user.id),
+        getCustomerStats(user.id),
+        getUserChatRooms(user.id, 'customer'),
+      ])
+
+      setRequests(requestsData)
+      setStats(statsData)
+      setChatRooms(chatsData)
+    } catch (error) {
+      console.error('Error loading dashboard data:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  const handleRequestCreated = () => {
+    setCreateOpen(false)
+    loadData()
+  }
+
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="animate-pulse space-y-6">
+          <div className="h-8 bg-muted rounded w-1/3"></div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-24 bg-muted rounded"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Welcome back, {currentUser.name.split(" ")[0]}!</h1>
+          <h1 className="text-2xl font-bold">Welcome to Giftra!</h1>
           <p className="text-muted-foreground">Manage your gift requests and collaborations</p>
         </div>
         <Button onClick={() => setCreateOpen(true)} className="gap-2">
@@ -72,9 +115,9 @@ function CustomerDashboardContent() {
             <Package className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{activeRequests.length}</div>
+            <div className="text-2xl font-bold">{stats.activeRequests}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {myRequests.length} total requests
+              {stats.totalRequests} total requests
             </p>
           </CardContent>
         </Card>
@@ -86,7 +129,7 @@ function CustomerDashboardContent() {
             <MessageSquare className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{unreadChats}</div>
+            <div className="text-2xl font-bold">{chatRooms.length}</div>
             <p className="text-xs text-muted-foreground mt-1">
               Conversations in progress
             </p>
@@ -100,9 +143,7 @@ function CustomerDashboardContent() {
             <Clock className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {myRequests.filter(r => r.status === "completed").length}
-            </div>
+            <div className="text-2xl font-bold">{stats.completedOrders}</div>
             <p className="text-xs text-muted-foreground mt-1">
               Successfully delivered
             </p>
@@ -125,7 +166,7 @@ function CustomerDashboardContent() {
           </Link>
         </CardHeader>
         <CardContent>
-          {myRequests.length === 0 ? (
+          {requests.length === 0 ? (
             <div className="text-center py-8">
               <Package className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground mb-4">No requests yet</p>
@@ -136,8 +177,8 @@ function CustomerDashboardContent() {
             </div>
           ) : (
             <div className="space-y-4">
-              {myRequests.slice(0, 5).map((request) => {
-                const chatRoom = chatRooms.find(c => c.requestId === request.id)
+              {requests.slice(0, 5).map((request) => {
+                const chatRoom = chatRooms.find(c => c.request_id === request.id)
                 return (
                   <div
                     key={request.id}
@@ -145,26 +186,37 @@ function CustomerDashboardContent() {
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-1">
-                        <h3 className="font-medium truncate">{request.category}</h3>
+                        <h3 className="font-medium truncate">
+                          {request.title || CATEGORY_LABELS[request.category] || request.category}
+                        </h3>
                         <Badge variant="outline" className={statusColors[request.status]}>
-                          {statusLabels[request.status]}
+                          {REQUEST_STATUS_LABELS[request.status] || request.status}
                         </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground truncate">
                         {request.description}
                       </p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          Due: {new Date(request.deadline).toLocaleDateString()}
-                        </span>
-                        <span>
-                          Budget: ${request.budgetMin} - ${request.budgetMax}
-                        </span>
+                        {request.deadline && (
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            Due: {new Date(request.deadline).toLocaleDateString()}
+                          </span>
+                        )}
+                        {request.budget_min && request.budget_max && (
+                          <span>
+                            Budget: ${request.budget_min} - ${request.budget_max}
+                          </span>
+                        )}
+                        {request.assigned_artist && (
+                          <span className="text-primary">
+                            Artist: {request.assigned_artist.full_name}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
-                      {chatRoom && !chatRoom.isLocked && (
+                      {chatRoom && (
                         <Link href={`/chat/${chatRoom.id}`}>
                           <Button size="sm" variant="outline" className="gap-1">
                             <MessageSquare className="w-4 h-4" />
@@ -186,7 +238,11 @@ function CustomerDashboardContent() {
         </CardContent>
       </Card>
 
-      <CreateRequestDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <CreateRequestDialog 
+        open={createOpen} 
+        onOpenChange={setCreateOpen} 
+        onSuccess={handleRequestCreated}
+      />
     </div>
   )
 }

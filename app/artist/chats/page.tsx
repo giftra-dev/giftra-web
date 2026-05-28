@@ -1,125 +1,119 @@
 "use client"
 
+import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
-import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { 
-  MessageSquare,
-  User
-} from "lucide-react"
-import { useGiftraStore, type ChatStatus } from "@/lib/store"
+import { Card, CardContent } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
+import { getCurrentUser, getUserChatRooms } from "@/lib/supabase/queries"
+import type { ChatRoomWithRelations } from "@/lib/types/database"
+import { REQUEST_STATUS_LABELS } from "@/lib/types/database"
+import { MessageSquare, User } from "lucide-react"
 
-const chatStatusLabels: Record<ChatStatus, string> = {
-  admin_review: "Waiting for Review",
-  artist_assigned: "Awaiting Payment",
-  artist_chat_active: "Chat Active",
-  in_progress: "In Progress",
-  paused: "Paused",
-  completed: "Completed",
-}
-
-const chatStatusColors: Record<ChatStatus, string> = {
-  admin_review: "bg-muted text-muted-foreground",
-  artist_assigned: "bg-warning/20 text-warning-foreground",
-  artist_chat_active: "bg-primary/20 text-primary",
-  in_progress: "bg-primary/20 text-primary",
-  paused: "bg-muted text-muted-foreground",
-  completed: "bg-success/20 text-success-foreground",
+const statusColors: Record<string, string> = {
+  pending_review: "bg-muted text-muted-foreground",
+  approved: "bg-info/20 text-info-foreground border-info/30",
+  assigned: "bg-warning/20 text-warning-foreground border-warning/30",
+  in_progress: "bg-primary/20 text-primary border-primary/30",
+  completed: "bg-success/20 text-success-foreground border-success/30",
+  delivered: "bg-success/20 text-success-foreground border-success/30",
+  cancelled: "bg-destructive/20 text-destructive-foreground border-destructive/30",
+  rejected: "bg-destructive/20 text-destructive-foreground border-destructive/30",
 }
 
 function ArtistChatsContent() {
-  const { currentUser, chatRooms, requests, users, messages } = useGiftraStore()
+  const [chatRooms, setChatRooms] = useState<ChatRoomWithRelations[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  if (!currentUser) return null
+  const loadChats = useCallback(async () => {
+    try {
+      const { user } = await getCurrentUser()
+      if (!user) return
+      setChatRooms(await getUserChatRooms(user.id, "artist"))
+    } catch (error) {
+      console.error("Error loading chats:", error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
 
-  const myChats = chatRooms
-    .filter(c => c.artistId === currentUser.id)
-    .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
+  useEffect(() => {
+    loadChats()
+  }, [loadChats])
+
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="p-6 space-y-6">
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-80 w-full" />
+        </div>
+      </DashboardLayout>
+    )
+  }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">Messages</h1>
-        <p className="text-muted-foreground">Chat with customers about their orders</p>
-      </div>
+    <DashboardLayout>
+      <div className="p-6 space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Messages</h1>
+          <p className="text-muted-foreground">Chat with customers about assigned orders</p>
+        </div>
 
-      {/* Chat List */}
-      <Card>
-        <CardContent className="p-0">
-          {myChats.length === 0 ? (
-            <div className="text-center py-12">
-              <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground mb-2">No conversations yet</p>
-              <p className="text-sm text-muted-foreground">
-                Chats will appear here when you are assigned to orders
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {myChats.map((chat) => {
-                const request = requests.find(r => r.id === chat.requestId)
-                const customer = users.find(u => u.id === chat.customerId)
-                const chatMessages = messages.filter(m => m.chatRoomId === chat.id)
-                const lastMessage = chatMessages[chatMessages.length - 1]
-                const unreadCount = chatMessages.filter(m => !m.isRead && m.senderId !== currentUser.id).length
-
-                return (
-                  <Link
-                    key={chat.id}
-                    href={chat.isLocked ? "#" : `/chat/${chat.id}`}
-                    className={`flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors ${chat.isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <div className="relative">
+        <Card>
+          <CardContent className="p-0">
+            {chatRooms.length === 0 ? (
+              <div className="text-center py-12">
+                <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground mb-2">No conversations yet</p>
+                <p className="text-sm text-muted-foreground">
+                  Chats will appear here when you are assigned to customer requests.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {chatRooms.map((chat) => {
+                  const status = chat.request?.status
+                  return (
+                    <Link
+                      key={chat.id}
+                      href={`/chat/${chat.id}`}
+                      className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors"
+                    >
                       <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                         <User className="w-5 h-5 text-primary" />
                       </div>
-                      {unreadCount > 0 && (
-                        <span className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center">
-                          {unreadCount}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-medium truncate">
-                          {customer?.name || "Customer"}
-                        </h3>
-                        <Badge variant="outline" className={chatStatusColors[chat.status]}>
-                          {chatStatusLabels[chat.status]}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground truncate">
-                        {request?.category}: {request?.description.slice(0, 50)}...
-                      </p>
-                      {lastMessage && (
-                        <p className="text-xs text-muted-foreground mt-1 truncate">
-                          {lastMessage.type === "system" 
-                            ? `System: ${lastMessage.content}`
-                            : lastMessage.content
-                          }
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <h3 className="font-medium truncate">
+                            {chat.customer?.full_name || "Customer"}
+                          </h3>
+                          {status && (
+                            <Badge variant="outline" className={statusColors[status]}>
+                              {REQUEST_STATUS_LABELS[status] || status}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {chat.request?.title || "Untitled request"}
                         </p>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {new Date(chat.lastMessageAt).toLocaleDateString()}
-                    </div>
-                  </Link>
-                )
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(chat.last_message_at).toLocaleDateString()}
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </DashboardLayout>
   )
 }
 
 export default function ArtistChatsPage() {
-  return (
-    <DashboardLayout>
-      <ArtistChatsContent />
-    </DashboardLayout>
-  )
+  return <ArtistChatsContent />
 }
