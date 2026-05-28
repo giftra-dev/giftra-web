@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { 
   Gift, 
   LayoutDashboard, 
@@ -12,12 +13,23 @@ import {
   LogOut,
   User,
   Palette,
-  Shield
+  Shield,
+  Bell,
+  Settings,
+  Users,
+  History
 } from "lucide-react"
-import { useGiftraStore, type UserRole } from "@/lib/store"
+import { OrderHistoryModal } from "@/components/order-history-modal"
 import { cn } from "@/lib/utils"
-import { getCurrentProfile, getCurrentUser, signOut } from "@/lib/supabase/queries"
+import { 
+  getCurrentProfile, 
+  getCurrentUser, 
+  signOut,
+  getUnreadNotificationCount,
+  subscribeToNotifications 
+} from "@/lib/supabase/queries"
 import { hasSupabaseConfig } from "@/lib/supabase/config"
+import type { UserRole, Profile, Notification } from "@/lib/types/database"
 
 const roleNavItems: Record<UserRole, { href: string; label: string; icon: React.ElementType }[]> = {
   customer: [
@@ -34,6 +46,7 @@ const roleNavItems: Record<UserRole, { href: string; label: string; icon: React.
     { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/admin/requests", label: "Requests Queue", icon: Package },
     { href: "/admin/orders", label: "Orders", icon: Package },
+    { href: "/admin/users", label: "Users", icon: Users },
     { href: "/admin/chats", label: "Chat Monitor", icon: MessageSquare },
   ],
 }
@@ -44,50 +57,70 @@ const roleIcons: Record<UserRole, React.ElementType> = {
   admin: Shield,
 }
 
+interface UserState {
+  id: string
+  email: string
+  name: string
+  role: UserRole
+  avatar?: string
+}
+
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { currentUser, logout, isAuthenticated, setCurrentUser } = useGiftraStore()
-  const [isHydratingAuth, setIsHydratingAuth] = useState(hasSupabaseConfig)
+  const [currentUser, setCurrentUser] = useState<UserState | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [unreadNotifications, setUnreadNotifications] = useState(0)
+  const [orderHistoryOpen, setOrderHistoryOpen] = useState(false)
 
-  useEffect(() => {
-    if (!hasSupabaseConfig || isAuthenticated) {
-      setIsHydratingAuth(false)
+  const loadUser = useCallback(async () => {
+    if (!hasSupabaseConfig) {
+      setIsLoading(false)
       return
     }
 
-    let isMounted = true
+    try {
+      const [{ user }, profile] = await Promise.all([
+        getCurrentUser(),
+        getCurrentProfile(),
+      ])
 
-    async function hydrateAuth() {
-      try {
-        const [{ user }, profile] = await Promise.all([
-          getCurrentUser(),
-          getCurrentProfile(),
-        ])
-
-        if (!isMounted || !user) return
-
-        setCurrentUser({
-          id: user.id,
-          email: user.email ?? profile?.email ?? "",
-          name: profile?.full_name || user.email || "Giftra user",
-          role: profile?.role ?? "customer",
-          avatar: profile?.avatar_url ?? undefined,
-          createdAt: new Date(user.created_at),
-        })
-      } finally {
-        if (isMounted) {
-          setIsHydratingAuth(false)
-        }
+      if (!user || !profile) {
+        router.push('/auth/login')
+        return
       }
-    }
 
-    hydrateAuth()
+      setCurrentUser({
+        id: user.id,
+        email: user.email ?? profile.email ?? "",
+        name: profile.full_name || user.email || "Giftra user",
+        role: profile.role,
+        avatar: profile.avatar_url ?? undefined,
+      })
 
-    return () => {
-      isMounted = false
+      // Load unread notifications
+      const count = await getUnreadNotificationCount(user.id)
+      setUnreadNotifications(count)
+
+      // Subscribe to new notifications
+      const channel = subscribeToNotifications(user.id, (notification: Notification) => {
+        setUnreadNotifications(prev => prev + 1)
+      })
+
+      return () => {
+        channel.unsubscribe()
+      }
+    } catch (error) {
+      console.error('Error loading user:', error)
+      router.push('/auth/login')
+    } finally {
+      setIsLoading(false)
     }
-  }, [isAuthenticated, setCurrentUser])
+  }, [router])
+
+  useEffect(() => {
+    loadUser()
+  }, [loadUser])
 
   useEffect(() => {
     if (!currentUser) return
@@ -102,15 +135,20 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     }
   }, [currentUser, pathname, router])
 
-  if (isHydratingAuth) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading...</p>
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center animate-pulse">
+            <Gift className="w-6 h-6 text-primary-foreground" />
+          </div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
       </div>
     )
   }
 
-  if (!isAuthenticated || !currentUser) {
+  if (!currentUser) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
@@ -127,11 +165,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const RoleIcon = roleIcons[currentUser.role]
 
   const handleLogout = async () => {
-    document.cookie = "giftra_demo_role=; path=/; max-age=0; samesite=lax"
     if (hasSupabaseConfig) {
       await signOut()
     }
-    logout()
     router.push("/")
   }
 
@@ -166,6 +202,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               >
                 <item.icon className="w-5 h-5" />
                 {item.label}
+                {item.label === "Messages" && unreadNotifications > 0 && (
+                  <Badge variant="destructive" className="ml-auto h-5 min-w-[20px] px-1.5">
+                    {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                  </Badge>
+                )}
               </Link>
             )
           })}
@@ -174,8 +215,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         {/* User Section */}
         <div className="p-4 border-t border-sidebar-border">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-sidebar-accent flex items-center justify-center">
-              <RoleIcon className="w-5 h-5 text-sidebar-accent-foreground" />
+            <div className="w-10 h-10 rounded-full bg-sidebar-accent flex items-center justify-center overflow-hidden">
+              {currentUser.avatar ? (
+                <img src={currentUser.avatar} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <RoleIcon className="w-5 h-5 text-sidebar-accent-foreground" />
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-sidebar-foreground truncate">
@@ -186,15 +231,38 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               </p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
-            onClick={handleLogout}
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign out
-          </Button>
+          <div className="space-y-1">
+            {currentUser.role === "customer" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+                onClick={() => setOrderHistoryOpen(true)}
+              >
+                <History className="w-4 h-4 mr-2" />
+                Order History
+              </Button>
+            )}
+            <Link href={`/${currentUser.role}/settings`}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                Settings
+              </Button>
+            </Link>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+              onClick={handleLogout}
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Sign out
+            </Button>
+          </div>
         </div>
       </aside>
 

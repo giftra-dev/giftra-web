@@ -14,11 +14,16 @@ export type RequestStatus =
   | 'rejected'
 
 export type OrderStatus =
-  | 'pending_payment'
+  | 'draft'
+  | 'awaiting_payment'
   | 'paid'
-  | 'in_production'
+  | 'in_progress'
+  | 'preview_shared'
+  | 'revision_requested'
+  | 'ready_to_ship'
   | 'shipped'
   | 'delivered'
+  | 'completed'
   | 'refunded'
 
 export type MessageType =
@@ -193,14 +198,14 @@ export interface RequestWithRelations extends Request {
 }
 
 export interface ChatRoomWithRelations extends ChatRoom {
-  request?: Request
-  customer?: Profile
-  artist?: Profile
+  request?: Request & { category?: GiftCategory; title?: string; status?: RequestStatus }
+  customer?: Partial<Profile>
+  artist?: Partial<Profile>
   messages?: Message[]
 }
 
 export interface MessageWithSender extends Message {
-  sender?: Profile
+  sender?: Partial<Profile> & { role?: UserRole }
 }
 
 export interface OrderWithRelations extends Order {
@@ -269,6 +274,7 @@ export interface ArtistStats {
   completedOrders: number
   totalEarnings: number
   averageRating: number
+  totalReviews: number
   pendingMessages: number
 }
 
@@ -279,4 +285,43 @@ export interface AdminStats {
   totalUsers: number
   totalArtists: number
   totalCustomers: number
+}
+
+// Helper type for category display
+export const CATEGORY_LABELS: Record<GiftCategory, string> = {
+  portrait: 'Portrait',
+  caricature: 'Caricature',
+  illustration: 'Illustration',
+  calligraphy: 'Calligraphy',
+  custom_jewelry: 'Custom Jewelry',
+  woodwork: 'Woodwork',
+  pottery: 'Pottery',
+  textile: 'Textile',
+  digital_art: 'Digital Art',
+  other: 'Other',
+}
+
+export const REQUEST_STATUS_LABELS: Record<RequestStatus, string> = {
+  pending_review: 'Pending Review',
+  approved: 'Approved',
+  assigned: 'Artist Assigned',
+  in_progress: 'In Progress',
+  completed: 'Completed',
+  delivered: 'Delivered',
+  cancelled: 'Cancelled',
+  rejected: 'Rejected',
+}
+
+export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  draft: 'Draft',
+  awaiting_payment: 'Awaiting Payment',
+  paid: 'Paid',
+  in_progress: 'In Progress',
+  preview_shared: 'Preview Shared',
+  revision_requested: 'Revision Requested',
+  ready_to_ship: 'Ready to Ship',
+  shipped: 'Shipped',
+  delivered: 'Delivered',
+  completed: 'Completed',
+  refunded: 'Refunded',
 }
