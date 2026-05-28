@@ -169,6 +169,21 @@ export async function getAllUsers(): Promise<Profile[]> {
   return data || []
 }
 
+export async function updateUserProfile(
+  userId: string,
+  updates: Partial<Pick<Profile, 'full_name' | 'phone' | 'role' | 'bio' | 'portfolio_url' | 'specialties' | 'is_available' | 'is_super_admin'>>
+): Promise<{ data: Profile | null; error: Error | null }> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', userId)
+    .select()
+    .single()
+
+  return { data, error: error as Error | null }
+}
+
 // =====================================================
 // REQUEST FUNCTIONS
 // =====================================================
@@ -519,6 +534,26 @@ export async function getCustomerOrders(customerId: string): Promise<OrderWithRe
   return (data || []) as OrderWithRelations[]
 }
 
+export async function getCustomerOrderByRequestId(
+  requestId: string,
+  customerId: string
+): Promise<OrderWithRelations | null> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('orders')
+    .select(`
+      *,
+      request:requests(*),
+      artist:profiles!orders_artist_id_fkey(*),
+      review:reviews(*)
+    `)
+    .eq('request_id', requestId)
+    .eq('customer_id', customerId)
+    .maybeSingle()
+
+  return data as OrderWithRelations | null
+}
+
 export async function getArtistOrders(artistId: string): Promise<OrderWithRelations[]> {
   const supabase = createClient()
   const { data } = await supabase
@@ -563,6 +598,52 @@ export async function updateOrderStatus(
     .single()
   
   return { data, error: error as Error | null }
+}
+
+export async function updateOrderAndRequestStatus(
+  orderId: string,
+  requestId: string,
+  orderStatus: OrderStatus,
+  requestStatus?: RequestStatus,
+  additionalFields?: Partial<Order>
+): Promise<{ data: Order | null; error: Error | null }> {
+  const supabase = createClient()
+  const { data, error } = await updateOrderStatus(orderId, orderStatus, additionalFields)
+
+  if (!error && requestStatus) {
+    await supabase
+      .from('requests')
+      .update({
+        status: requestStatus,
+        completed_at: requestStatus === 'completed' ? new Date().toISOString() : undefined,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', requestId)
+  }
+
+  return { data, error }
+}
+
+export async function uploadFileToStorage(
+  bucket: 'reference-images' | 'order-artwork',
+  path: string,
+  file: File
+): Promise<{ url: string | null; path: string | null; error: Error | null }> {
+  const supabase = createClient()
+  const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
+    cacheControl: '3600',
+    upsert: false,
+  })
+
+  if (error) {
+    return { url: null, path: null, error: error as Error }
+  }
+
+  const { data: signed } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(data.path, 60 * 60 * 24 * 7)
+
+  return { url: signed?.signedUrl || null, path: data.path, error: null }
 }
 
 export async function markOrderPaid(

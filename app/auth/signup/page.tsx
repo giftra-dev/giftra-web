@@ -232,7 +232,7 @@ function SignupForm() {
 
               <div className="space-y-3">
                 <Label>I want to join as</Label>
-                <RadioGroup value={role} onValueChange={(v) => setRole(v as Exclude<UserRole, "admin">)}>
+                <RadioGroup value={role} onValueChange={(v: string) => setRole(v as Exclude<UserRole, "admin">)}>
                   <div className="grid grid-cols-2 gap-3">
                     <Label
                       htmlFor="customer"

@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { createRequest } from "@/lib/supabase/queries"
+import { createRequest, getCurrentUser, uploadFileToStorage } from "@/lib/supabase/queries"
 import type { GiftCategory } from "@/lib/types/database"
 import { CATEGORY_LABELS } from "@/lib/types/database"
 import { Calendar, DollarSign, Upload } from "lucide-react"
@@ -47,6 +47,7 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
   const [budgetMin, setBudgetMin] = useState("")
   const [budgetMax, setBudgetMax] = useState("")
   const [deadline, setDeadline] = useState("")
+  const [referenceFiles, setReferenceFiles] = useState<File[]>([])
 
   const resetForm = () => {
     setTitle("")
@@ -57,6 +58,7 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
     setBudgetMin("")
     setBudgetMax("")
     setDeadline("")
+    setReferenceFiles([])
     setError("")
   }
 
@@ -81,6 +83,24 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
     }
 
     try {
+      const { user } = await getCurrentUser()
+      if (!user) {
+        throw new Error("Please sign in before creating a request.")
+      }
+
+      const referenceImages = await Promise.all(
+        referenceFiles.map(async (file) => {
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-")
+          const { url, error: uploadError } = await uploadFileToStorage(
+            "reference-images",
+            `${user.id}/${Date.now()}-${safeName}`,
+            file
+          )
+          if (uploadError) throw uploadError
+          return url
+        })
+      )
+
       const { data, error: requestError } = await createRequest({
         title: title || `${CATEGORY_LABELS[category]} Request`,
         category,
@@ -90,7 +110,7 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
         budget_min: minBudget,
         budget_max: maxBudget,
         deadline: deadline || undefined,
-        reference_images: [],
+        reference_images: referenceImages.filter((url): url is string => Boolean(url)),
       })
 
       if (requestError) {
@@ -244,15 +264,24 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
 
           <div className="space-y-2">
             <Label>Reference Images (Optional)</Label>
-            <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer">
+            <label className="block border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer">
               <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">
-                Drag and drop images here, or click to browse
+                {referenceFiles.length > 0
+                  ? `${referenceFiles.length} file${referenceFiles.length === 1 ? "" : "s"} selected`
+                  : "Drag and drop images here, or click to browse"}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 PNG, JPG up to 10MB each
               </p>
-            </div>
+              <Input
+                type="file"
+                accept="image/*"
+                multiple
+                className="sr-only"
+                onChange={(event) => setReferenceFiles(Array.from(event.target.files || []))}
+              />
+            </label>
           </div>
 
           <div className="flex justify-end gap-3 pt-4">

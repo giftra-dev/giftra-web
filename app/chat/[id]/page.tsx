@@ -33,7 +33,9 @@ import {
   getOrderByRequestId,
   createOrder,
   updateOrderStatus,
+  updateOrderAndRequestStatus,
   subscribeToMessages,
+  uploadFileToStorage,
 } from "@/lib/supabase/queries"
 import { protectedChatWarning, validateChatMessage } from "@/lib/giftra/message-policy"
 import { cn } from "@/lib/utils"
@@ -47,13 +49,17 @@ const chatStatusColors: Record<string, string> = {
   completed: "bg-success/10 text-success-foreground border-success/30",
 }
 
+const mockPaymentsEnabled = process.env.NEXT_PUBLIC_ENABLE_MOCK_PAYMENTS === "true"
+
 function ChatPageContent({ chatId }: { chatId: string }) {
   const router = useRouter()
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [messageInput, setMessageInput] = useState("")
   const [contactWarning, setContactWarning] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
+  const [actionError, setActionError] = useState("")
 
   const [chatRoom, setChatRoom] = useState<ChatRoomWithRelations | null>(null)
   const [messages, setMessages] = useState<MessageWithSender[]>([])
@@ -206,14 +212,76 @@ function ChatPageContent({ chatId }: { chatId: string }) {
     if (!request) return
     
     try {
-      // Simulate payment - in production, integrate with Stripe
-      const { data: newOrder } = await createOrder(request.id, `pi_${Date.now()}`)
+      setActionError("")
+      if (!mockPaymentsEnabled) {
+        const { data: newOrder } = await createOrder(request.id)
+        if (newOrder) {
+          setOrder(newOrder)
+          setActionError("Payment provider is not configured. An unpaid order was created.")
+          loadData()
+        }
+        return
+      }
+
+      const { data: newOrder } = await createOrder(request.id, `mock_${Date.now()}`)
       if (newOrder) {
         setOrder(newOrder)
         loadData()
       }
     } catch (error) {
       console.error('Error processing payment:', error)
+      setActionError(error instanceof Error ? error.message : "Unable to process payment.")
+    }
+  }
+
+  const handleApproveDesign = async () => {
+    if (!order || !request) return
+    await updateOrderStatus(order.id, "ready_to_ship")
+    await loadData()
+  }
+
+  const handleRequestRevision = async () => {
+    if (!order) return
+    await updateOrderStatus(order.id, "revision_requested")
+    await loadData()
+  }
+
+  const handleMarkDelivered = async () => {
+    if (!order || !request) return
+    await updateOrderAndRequestStatus(order.id, request.id, "delivered", "delivered", {
+      delivered_at: new Date().toISOString(),
+    })
+    await loadData()
+  }
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !currentUser || isChatLocked || isSending) return
+
+    setIsSending(true)
+    setActionError("")
+
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-")
+      const { url, error: uploadError } = await uploadFileToStorage(
+        "order-artwork",
+        `${chatId}/${currentUser.id}/${Date.now()}-${safeName}`,
+        file
+      )
+      if (uploadError) throw uploadError
+
+      await sendMessage({
+        chat_room_id: chatId,
+        message_type: file.type.startsWith("image/") ? "image" : "file",
+        content: file.type.startsWith("image/") ? "Shared an image" : `Shared ${file.name}`,
+        attachments: url ? [url] : [],
+      })
+    } catch (error) {
+      console.error("Error uploading file:", error)
+      setActionError(error instanceof Error ? error.message : "Unable to upload file.")
+    } finally {
+      event.target.value = ""
+      setIsSending(false)
     }
   }
 
@@ -376,13 +444,35 @@ function ChatPageContent({ chatId }: { chatId: string }) {
             </div>
           )}
 
+          {actionError && (
+            <div className="px-4 py-3 bg-warning/10 border-t border-warning/30 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-warning-foreground" />
+              <p className="text-sm text-warning-foreground flex-1">{actionError}</p>
+              <Button size="sm" variant="ghost" onClick={() => setActionError("")}>
+                Dismiss
+              </Button>
+            </div>
+          )}
+
           {/* Message Input */}
           {!isAdmin && (
             <div className="p-4 border-t border-border bg-card">
               <div className="flex items-center gap-2 max-w-3xl mx-auto">
-                <Button variant="ghost" size="icon" disabled={isChatLocked}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={isChatLocked || isSending}
+                  onClick={() => fileInputRef.current?.click()}
+                >
                   <ImageIcon className="w-5 h-5" />
                 </Button>
+                <Input
+                  ref={fileInputRef}
+                  type="file"
+                  className="sr-only"
+                  accept="image/*,.pdf"
+                  onChange={handleFileUpload}
+                />
                 <Input
                   placeholder={isChatLocked ? "Chat is locked" : "Type a message..."}
                   value={messageInput}
@@ -459,19 +549,27 @@ function ChatPageContent({ chatId }: { chatId: string }) {
                   {isCustomer && !order && request.quoted_price && (
                     <Button className="w-full gap-2" onClick={handlePayment}>
                       <CreditCard className="w-4 h-4" />
-                      Pay ${request.quoted_price + Math.round(request.quoted_price * 0.15)}
+                      {mockPaymentsEnabled
+                        ? `Pay $${(request.quoted_price + Math.round(request.quoted_price * 0.15 * 100) / 100).toFixed(2)}`
+                        : "Create Payment Order"}
                     </Button>
                   )}
                   {isCustomer && order && order.status === "preview_shared" && (
                     <>
-                      <Button className="w-full gap-2" variant="default">
+                      <Button className="w-full gap-2" variant="default" onClick={handleApproveDesign}>
                         <Check className="w-4 h-4" />
                         Approve Design
                       </Button>
-                      <Button className="w-full gap-2" variant="outline">
+                      <Button className="w-full gap-2" variant="outline" onClick={handleRequestRevision}>
                         Request Revision
                       </Button>
                     </>
+                  )}
+                  {isCustomer && order && order.status === "shipped" && (
+                    <Button className="w-full gap-2" onClick={handleMarkDelivered}>
+                      <Check className="w-4 h-4" />
+                      Mark Delivered
+                    </Button>
                   )}
 
                   {/* Order Status */}

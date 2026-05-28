@@ -38,9 +38,32 @@ Optional local-only demo mode:
 
 ```txt
 NEXT_PUBLIC_ENABLE_DEMO_AUTH=true
+NEXT_PUBLIC_ENABLE_MOCK_PAYMENTS=true
 ```
 
-Do not enable demo auth in production.
+Do not enable demo auth or mock payments in production.
+
+## Payments
+
+The UI can create unpaid orders, and local development can use `NEXT_PUBLIC_ENABLE_MOCK_PAYMENTS=true` to mark an order as paid. Production still needs a real payment provider such as Stripe or Lemon Squeezy.
+
+Required production work:
+
+1. Create checkout sessions from a server route or server action.
+2. Confirm payment in a provider webhook.
+3. Only after webhook confirmation, call the Supabase payment workflow/RPC or update the order with a real provider payment id.
+4. Keep `NEXT_PUBLIC_ENABLE_MOCK_PAYMENTS` unset in production.
+
+## Storage
+
+Reference images and chat/order artwork use Supabase Storage.
+
+Required buckets:
+
+- `reference-images`
+- `order-artwork`
+
+The production workflow SQL creates private buckets. If you keep them private, generate signed URLs when displaying files. The current app stores signed URLs for uploaded files so uploads work immediately for the active workflow; for long-lived private assets, add a refresh/signing endpoint.
 
 ## Workflow Guarantees
 

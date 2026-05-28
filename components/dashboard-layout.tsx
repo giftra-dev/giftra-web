@@ -5,6 +5,14 @@ import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { 
   Gift, 
   LayoutDashboard, 
@@ -17,7 +25,8 @@ import {
   Bell,
   Settings,
   Users,
-  History
+  History,
+  UserCheck
 } from "lucide-react"
 import { OrderHistoryModal } from "@/components/order-history-modal"
 import { cn } from "@/lib/utils"
@@ -25,7 +34,10 @@ import {
   getCurrentProfile, 
   getCurrentUser, 
   signOut,
+  getNotifications,
   getUnreadNotificationCount,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
   subscribeToNotifications 
 } from "@/lib/supabase/queries"
 import { hasSupabaseConfig } from "@/lib/supabase/config"
@@ -47,6 +59,7 @@ const roleNavItems: Record<UserRole, { href: string; label: string; icon: React.
     { href: "/admin/requests", label: "Requests Queue", icon: Package },
     { href: "/admin/orders", label: "Orders", icon: Package },
     { href: "/admin/users", label: "Users", icon: Users },
+    { href: "/admin/artists", label: "Artists", icon: UserCheck },
     { href: "/admin/chats", label: "Chat Monitor", icon: MessageSquare },
   ],
 }
@@ -71,6 +84,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<UserState | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [unreadNotifications, setUnreadNotifications] = useState(0)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [orderHistoryOpen, setOrderHistoryOpen] = useState(false)
 
   const loadUser = useCallback(async () => {
@@ -99,12 +114,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       })
 
       // Load unread notifications
-      const count = await getUnreadNotificationCount(user.id)
+      const [count, notificationData] = await Promise.all([
+        getUnreadNotificationCount(user.id),
+        getNotifications(user.id),
+      ])
       setUnreadNotifications(count)
+      setNotifications(notificationData)
 
       // Subscribe to new notifications
       const channel = subscribeToNotifications(user.id, (notification: Notification) => {
         setUnreadNotifications(prev => prev + 1)
+        setNotifications(prev => [notification, ...prev])
       })
 
       return () => {
@@ -171,6 +191,34 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     router.push("/")
   }
 
+  const handleOpenNotifications = async () => {
+    if (!currentUser) return
+    setNotificationsOpen(true)
+    const data = await getNotifications(currentUser.id)
+    setNotifications(data)
+  }
+
+  const handleMarkAllRead = async () => {
+    if (!currentUser) return
+    await markAllNotificationsAsRead(currentUser.id)
+    setUnreadNotifications(0)
+    setNotifications((current) => current.map((item) => ({ ...item, is_read: true })))
+  }
+
+  const handleNotificationClick = async (notification: Notification) => {
+    if (!notification.is_read) {
+      await markNotificationAsRead(notification.id)
+      setUnreadNotifications((count) => Math.max(0, count - 1))
+      setNotifications((current) =>
+        current.map((item) => item.id === notification.id ? { ...item, is_read: true } : item)
+      )
+    }
+    if (notification.link) {
+      router.push(notification.link)
+      setNotificationsOpen(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background flex">
       {/* Sidebar */}
@@ -232,6 +280,20 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="space-y-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+              onClick={handleOpenNotifications}
+            >
+              <Bell className="w-4 h-4 mr-2" />
+              Notifications
+              {unreadNotifications > 0 && (
+                <Badge variant="destructive" className="ml-auto h-5 min-w-[20px] px-1.5">
+                  {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                </Badge>
+              )}
+            </Button>
             {currentUser.role === "customer" && (
               <Button
                 variant="ghost"
@@ -270,6 +332,46 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 overflow-auto">
         {children}
       </main>
+
+      <Dialog open={notificationsOpen} onOpenChange={setNotificationsOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Notifications</DialogTitle>
+            <DialogDescription>Recent account and order updates</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end">
+            <Button variant="ghost" size="sm" onClick={handleMarkAllRead} disabled={unreadNotifications === 0}>
+              Mark all read
+            </Button>
+          </div>
+          <ScrollArea className="h-[420px] pr-4">
+            {notifications.length === 0 ? (
+              <div className="py-12 text-center text-sm text-muted-foreground">No notifications yet</div>
+            ) : (
+              <div className="space-y-2">
+                {notifications.map((notification) => (
+                  <button
+                    key={notification.id}
+                    className="w-full text-left rounded-lg border border-border p-3 hover:bg-muted/50 transition-colors"
+                    onClick={() => handleNotificationClick(notification)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-sm">{notification.title}</p>
+                        <p className="text-sm text-muted-foreground">{notification.message}</p>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {new Date(notification.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                      {!notification.is_read && <span className="mt-1 h-2 w-2 rounded-full bg-primary" />}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
