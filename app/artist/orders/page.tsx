@@ -305,12 +305,12 @@ function ArtistOrdersContent() {
                         </div>
                         <div className="flex flex-col gap-2">
                           {order.chat_room_id && (
-                            <Link href={`/chat/${order.chat_room_id}`}>
-                              <Button size="sm" className="w-full gap-1">
+                            <Button asChild size="sm" className="w-full gap-1">
+                              <Link href={`/chat/${order.chat_room_id}`}>
                                 <MessageSquare className="w-4 h-4" />
                                 Chat
-                              </Button>
-                            </Link>
+                              </Link>
+                            </Button>
                           )}
                           {order.status === "paid" && (
                             <Button 

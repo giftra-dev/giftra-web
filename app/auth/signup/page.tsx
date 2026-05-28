@@ -9,13 +9,45 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Gift, Mail, Lock, Eye, EyeOff, User, Palette } from "lucide-react"
+import { Gift, Mail, Lock, Eye, EyeOff, User, Palette, CheckCircle, Sparkles } from "lucide-react"
 import { signUp, signInWithGoogle } from "@/lib/supabase/queries"
 import { hasSupabaseConfig } from "@/lib/supabase/config"
 import type { UserRole } from "@/lib/types/database"
 
 const isSignupRole = (role: unknown): role is Exclude<UserRole, "admin"> =>
   role === "customer" || role === "artist"
+
+const signupCopy: Record<Exclude<UserRole, "admin">, {
+  eyebrow: string
+  title: string
+  description: string
+  cardTitle: string
+  cardDescription: string
+  cta: string
+  bullets: string[]
+  icon: React.ElementType
+}> = {
+  customer: {
+    eyebrow: "For thoughtful gift buyers",
+    title: "Request a custom gift without chasing artists manually",
+    description: "Create a brief, get matched by Giftra, pay once the quote is ready, and keep every conversation protected in one place.",
+    cardTitle: "Create Customer Account",
+    cardDescription: "Start with a gift request and track every order from your dashboard.",
+    cta: "Create customer account",
+    bullets: ["Submit gift briefs", "Track requests and orders", "Chat after payment unlocks"],
+    icon: User,
+  },
+  artist: {
+    eyebrow: "For makers and artists",
+    title: "Join Giftra as an artist and receive curated assignments",
+    description: "Set up your profile, manage assigned orders, share previews, and keep production conversations organized.",
+    cardTitle: "Create Artist Account",
+    cardDescription: "Build your artist profile after signup so admins can assign the right work.",
+    cta: "Create artist account",
+    bullets: ["Receive matched orders", "Manage production status", "Share artwork and shipping updates"],
+    icon: Palette,
+  },
+}
 
 function SignupForm() {
   const router = useRouter()
@@ -33,6 +65,8 @@ function SignupForm() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const copy = signupCopy[role]
+  const CopyIcon = copy.icon
 
   const handleGoogleSignUp = async () => {
     if (!hasSupabaseConfig) {
@@ -44,7 +78,7 @@ function SignupForm() {
     setError("")
 
     try {
-      const { error: googleError } = await signInWithGoogle()
+      const { error: googleError } = await signInWithGoogle(role)
       if (googleError) {
         setError(googleError.message)
         setIsGoogleLoading(false)
@@ -92,24 +126,60 @@ function SignupForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-              <Gift className="w-6 h-6 text-primary-foreground" />
+    <div className="min-h-screen bg-muted/30 p-4">
+      <div className="mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-5xl items-center">
+        <div className="grid w-full gap-6 lg:grid-cols-[1fr_440px]">
+          <section className="flex flex-col justify-center rounded-lg border bg-card p-6 lg:p-8">
+            <Link href="/" className="inline-flex items-center gap-2 mb-8">
+              <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
+                <Gift className="w-6 h-6 text-primary-foreground" />
+              </div>
+              <span className="font-bold text-2xl">Giftra</span>
+            </Link>
+
+            <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-lg border px-3 py-1 text-sm text-muted-foreground">
+              <CopyIcon className="w-4 h-4" />
+              {copy.eyebrow}
             </div>
-            <span className="font-bold text-2xl">Giftra</span>
-          </Link>
-          <h1 className="text-2xl font-bold">Create an account</h1>
-          <p className="text-muted-foreground mt-1">Join Giftra and start creating</p>
-        </div>
+            <h1 className="text-3xl font-bold leading-tight">{copy.title}</h1>
+            <p className="mt-3 max-w-xl text-muted-foreground">{copy.description}</p>
+
+            <div className="mt-8 grid gap-3">
+              {copy.bullets.map((bullet) => (
+                <div key={bullet} className="flex items-center gap-3 text-sm">
+                  <CheckCircle className="w-4 h-4 text-primary" />
+                  {bullet}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 grid grid-cols-2 gap-3">
+              <Button
+                type="button"
+                variant={role === "customer" ? "default" : "outline"}
+                className="gap-2"
+                onClick={() => setRole("customer")}
+              >
+                <User className="w-4 h-4" />
+                Customer
+              </Button>
+              <Button
+                type="button"
+                variant={role === "artist" ? "default" : "outline"}
+                className="gap-2"
+                onClick={() => setRole("artist")}
+              >
+                <Palette className="w-4 h-4" />
+                Artist
+              </Button>
+            </div>
+          </section>
 
         <Card>
           <CardHeader className="space-y-1">
-            <CardTitle className="text-xl">Sign up</CardTitle>
+            <CardTitle className="text-xl">{copy.cardTitle}</CardTitle>
             <CardDescription>
-              Fill in your details to create your account
+              {copy.cardDescription}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -273,9 +343,18 @@ function SignupForm() {
               </div>
 
               <Button type="submit" className="w-full" disabled={isLoading || isGoogleLoading}>
-                {isLoading ? "Creating account..." : "Create account"}
+                {isLoading ? "Creating account..." : copy.cta}
               </Button>
             </form>
+
+            {role === "artist" && (
+              <div className="mt-4 rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
+                <div className="flex gap-2">
+                  <Sparkles className="mt-0.5 h-4 w-4 text-primary" />
+                  <p>After signup, complete your specialties, portfolio link, and availability in Artist Settings.</p>
+                </div>
+              </div>
+            )}
 
             <p className="text-center text-sm text-muted-foreground mt-6">
               Already have an account?{" "}
@@ -285,6 +364,7 @@ function SignupForm() {
             </p>
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   )

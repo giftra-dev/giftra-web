@@ -4,7 +4,9 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/customer/dashboard'
+  const next = searchParams.get('next')
+  const signupRole = searchParams.get('signup_role')
+  const requestedRole = signupRole === 'artist' || signupRole === 'customer' ? signupRole : null
 
   if (code) {
     const supabase = await createClient()
@@ -27,7 +29,7 @@ export async function GET(request: NextRequest) {
             email: data.user.email || '',
             full_name: data.user.user_metadata?.full_name || data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'User',
             avatar_url: data.user.user_metadata?.avatar_url || data.user.user_metadata?.picture || null,
-            role: data.user.user_metadata?.role || 'customer',
+            role: requestedRole || data.user.user_metadata?.role || 'customer',
           })
 
         if (profileError) {
@@ -36,8 +38,8 @@ export async function GET(request: NextRequest) {
       }
 
       // Determine redirect based on user role
-      const role = existingProfile?.role || data.user.user_metadata?.role || 'customer'
-      const redirectPath = next.startsWith('/') ? next : `/${role}/dashboard`
+      const role = existingProfile?.role || requestedRole || data.user.user_metadata?.role || 'customer'
+      const redirectPath = next?.startsWith('/') ? next : `/${role}/dashboard`
       
       return NextResponse.redirect(`${origin}${redirectPath}`)
     }

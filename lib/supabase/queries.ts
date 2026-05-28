@@ -56,14 +56,19 @@ export async function signIn(email: string, password: string) {
   return { data, error }
 }
 
-export async function signInWithGoogle() {
+export async function signInWithGoogle(role?: UserRole) {
   const supabase = createClient()
+  const baseRedirectTo =
+    process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ??
+    `${window.location.origin}/auth/callback`
+  const redirectTo = role
+    ? `${baseRedirectTo}${baseRedirectTo.includes('?') ? '&' : '?'}signup_role=${role}`
+    : baseRedirectTo
+
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo:
-        process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ??
-        `${window.location.origin}/auth/callback`,
+      redirectTo,
       queryParams: {
         access_type: 'offline',
         prompt: 'consent',
@@ -514,7 +519,7 @@ export async function getOrderByRequestId(requestId: string): Promise<Order | nu
     .from('orders')
     .select('*')
     .eq('request_id', requestId)
-    .single()
+    .maybeSingle()
   
   return data
 }
@@ -713,7 +718,7 @@ export async function getChatRoomByRequestId(
     .from('chat_rooms')
     .select('*')
     .eq('request_id', requestId)
-    .single()
+    .maybeSingle()
   
   return data
 }
