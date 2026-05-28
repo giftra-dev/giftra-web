@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   Dialog,
   DialogContent,
@@ -21,17 +22,22 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useGiftraStore } from "@/lib/store"
+import { hasSupabaseConfig } from "@/lib/supabase/config"
+import { createGiftRequest } from "@/lib/supabase/workflow"
+import type { GiftCategory } from "@/lib/types/database"
 import { Calendar, DollarSign, Upload } from "lucide-react"
 
-const categories = [
-  "Portrait",
-  "Digital Art",
-  "Custom Jewelry",
-  "Caricature",
-  "Pet Portrait",
-  "Handcrafted",
-  "Engraving",
-  "Other",
+const categories: { label: string; value: GiftCategory }[] = [
+  { label: "Portrait", value: "portrait" },
+  { label: "Digital Art", value: "digital_art" },
+  { label: "Custom Jewelry", value: "custom_jewelry" },
+  { label: "Caricature", value: "caricature" },
+  { label: "Calligraphy", value: "calligraphy" },
+  { label: "Illustration", value: "illustration" },
+  { label: "Woodwork", value: "woodwork" },
+  { label: "Pottery", value: "pottery" },
+  { label: "Textile", value: "textile" },
+  { label: "Other", value: "other" },
 ]
 
 interface CreateRequestDialogProps {
@@ -43,37 +49,76 @@ export function CreateRequestDialog({ open, onOpenChange }: CreateRequestDialogP
   const router = useRouter()
   const createRequest = useGiftraStore(state => state.createRequest)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
   
-  const [category, setCategory] = useState("")
+  const [category, setCategory] = useState<GiftCategory | "">("")
   const [description, setDescription] = useState("")
   const [budgetMin, setBudgetMin] = useState("")
   const [budgetMax, setBudgetMax] = useState("")
   const [deadline, setDeadline] = useState("")
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const resetForm = () => {
+    setCategory("")
+    setDescription("")
+    setBudgetMin("")
+    setBudgetMax("")
+    setDeadline("")
+    setError("")
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setError("")
 
-    createRequest({
-      category,
-      description,
-      budgetMin: parseInt(budgetMin) || 0,
-      budgetMax: parseInt(budgetMax) || 0,
-      deadline: new Date(deadline),
-      referenceImages: [],
-    })
+    const minBudget = Number.parseInt(budgetMin, 10)
+    const maxBudget = Number.parseInt(budgetMax, 10)
 
-    setTimeout(() => {
+    if (!category) {
+      setError("Please select a category.")
       setIsLoading(false)
+      return
+    }
+
+    if (!Number.isFinite(minBudget) || !Number.isFinite(maxBudget) || maxBudget < minBudget) {
+      setError("Please enter a valid budget range.")
+      setIsLoading(false)
+      return
+    }
+
+    try {
+      if (hasSupabaseConfig) {
+        const { error: requestError } = await createGiftRequest({
+          category,
+          description,
+          budget_min: minBudget,
+          budget_max: maxBudget,
+          deadline,
+          reference_images: [],
+        })
+
+        if (requestError) {
+          throw requestError
+        }
+      } else {
+        createRequest({
+          category,
+          description,
+          budgetMin: minBudget,
+          budgetMax: maxBudget,
+          deadline: new Date(deadline),
+          referenceImages: [],
+        })
+      }
+
       onOpenChange(false)
-      // Reset form
-      setCategory("")
-      setDescription("")
-      setBudgetMin("")
-      setBudgetMax("")
-      setDeadline("")
+      resetForm()
       router.refresh()
-    }, 500)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create request.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   // Calculate minimum date (tomorrow)
@@ -92,16 +137,26 @@ export function CreateRequestDialog({ open, onOpenChange }: CreateRequestDialogP
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {error ? (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+
           <div className="space-y-2">
             <Label htmlFor="category">Category</Label>
-            <Select value={category} onValueChange={setCategory} required>
+            <Select
+              value={category}
+              onValueChange={(value) => setCategory(value as GiftCategory)}
+              required
+            >
               <SelectTrigger id="category">
                 <SelectValue placeholder="Select a category" />
               </SelectTrigger>
               <SelectContent>
                 {categories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {cat}
+                  <SelectItem key={`${cat.value}-${cat.label}`} value={cat.value}>
+                    {cat.label}
                   </SelectItem>
                 ))}
               </SelectContent>
