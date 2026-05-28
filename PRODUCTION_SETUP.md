@@ -62,8 +62,20 @@ Required buckets:
 
 - `reference-images`
 - `order-artwork`
+- `artist-artworks` (public, so anonymous visitors can browse portfolio photos)
 
-The production workflow SQL creates private buckets. If you keep them private, generate signed URLs when displaying files. The current app stores signed URLs for uploaded files so uploads work immediately for the active workflow; for long-lived private assets, add a refresh/signing endpoint.
+The production workflow SQL creates private buckets for request/order files and a public bucket for artist portfolio samples. If you make `artist-artworks` private instead, add a signing endpoint because anonymous visitors need to see marketplace images.
+
+## Marketplace / Artist Portfolios
+
+The public browse experience uses `artist_artworks` plus artist profile fields. If you already created the database before this feature existed, run the latest `supabase/schema.sql` changes manually or apply equivalent migrations:
+
+- Add `preferred_artist_id` and `inspiration_artwork_id` to `requests`.
+- Create `artist_artworks`.
+- Add RLS policies that allow public reads for `is_public = true` and artist-only create/update/delete.
+- Create the public `artist-artworks` storage bucket.
+
+Artists add sample work from `/artist/settings`. Customers and anonymous visitors browse at `/browse`, favorite work locally in the browser, and start a request from a selected artwork.
 
 ## Workflow Guarantees
 

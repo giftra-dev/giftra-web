@@ -14,6 +14,8 @@ import type {
   ChatRoomWithRelations,
   MessageWithSender,
   OrderWithRelations,
+  ArtistArtwork,
+  ArtistArtworkWithArtist,
   UserRole,
   RequestStatus,
   GiftCategory,
@@ -216,6 +218,8 @@ export async function createRequest(
       deadline: input.deadline,
       budget_min: input.budget_min,
       budget_max: input.budget_max,
+      preferred_artist_id: input.preferred_artist_id,
+      inspiration_artwork_id: input.inspiration_artwork_id,
       status: 'pending_review',
     })
     .select()
@@ -630,7 +634,7 @@ export async function updateOrderAndRequestStatus(
 }
 
 export async function uploadFileToStorage(
-  bucket: 'reference-images' | 'order-artwork',
+  bucket: 'reference-images' | 'order-artwork' | 'artist-artworks',
   path: string,
   file: File
 ): Promise<{ url: string | null; path: string | null; error: Error | null }> {
@@ -644,11 +648,131 @@ export async function uploadFileToStorage(
     return { url: null, path: null, error: error as Error }
   }
 
+  if (bucket === 'artist-artworks') {
+    const { data: publicUrl } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(data.path)
+
+    return { url: publicUrl.publicUrl, path: data.path, error: null }
+  }
+
   const { data: signed } = await supabase.storage
     .from(bucket)
     .createSignedUrl(data.path, 60 * 60 * 24 * 7)
 
   return { url: signed?.signedUrl || null, path: data.path, error: null }
+}
+
+// =====================================================
+// MARKETPLACE / PORTFOLIO FUNCTIONS
+// =====================================================
+
+export async function getPublicArtworks(): Promise<ArtistArtworkWithArtist[]> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('artist_artworks')
+    .select(`
+      *,
+      artist:profiles!artist_artworks_artist_id_fkey(
+        id,
+        avatar_url,
+        bio,
+        specialties,
+        rating,
+        total_reviews,
+        is_available
+      )
+    `)
+    .eq('is_public', true)
+    .order('is_featured', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  return (data || []) as ArtistArtworkWithArtist[]
+}
+
+export async function getArtistPortfolio(
+  artistId: string
+): Promise<{ artist: Profile | null; artworks: ArtistArtwork[]; reviews: Review[] }> {
+  const supabase = createClient()
+  const [artistResult, artworksResult, reviewsResult] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, avatar_url, bio, specialties, rating, total_reviews, is_available, role, created_at, updated_at')
+      .eq('id', artistId)
+      .eq('role', 'artist')
+      .maybeSingle(),
+    supabase
+      .from('artist_artworks')
+      .select('*')
+      .eq('artist_id', artistId)
+      .eq('is_public', true)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('reviews')
+      .select('*')
+      .eq('artist_id', artistId)
+      .order('created_at', { ascending: false }),
+  ])
+
+  return {
+    artist: artistResult.data as Profile | null,
+    artworks: (artworksResult.data || []) as ArtistArtwork[],
+    reviews: reviewsResult.data || [],
+  }
+}
+
+export async function getMyArtistArtworks(artistId: string): Promise<ArtistArtwork[]> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('artist_artworks')
+    .select('*')
+    .eq('artist_id', artistId)
+    .order('created_at', { ascending: false })
+
+  return (data || []) as ArtistArtwork[]
+}
+
+export async function createArtistArtwork(input: {
+  artist_id: string
+  title: string
+  description?: string
+  category: GiftCategory
+  image_url: string
+  price_min?: number
+  price_max?: number
+  tags?: string[]
+  is_public?: boolean
+  is_featured?: boolean
+}): Promise<{ data: ArtistArtwork | null; error: Error | null }> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('artist_artworks')
+    .insert({
+      artist_id: input.artist_id,
+      title: input.title,
+      description: input.description,
+      category: input.category,
+      image_url: input.image_url,
+      price_min: input.price_min,
+      price_max: input.price_max,
+      tags: input.tags || [],
+      is_public: input.is_public ?? true,
+      is_featured: input.is_featured ?? false,
+    })
+    .select()
+    .single()
+
+  return { data: data as ArtistArtwork | null, error: error as Error | null }
+}
+
+export async function deleteArtistArtwork(artworkId: string): Promise<{ error: Error | null }> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('artist_artworks')
+    .delete()
+    .eq('id', artworkId)
+
+  return { error: error as Error | null }
 }
 
 export async function markOrderPaid(

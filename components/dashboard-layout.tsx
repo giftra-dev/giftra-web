@@ -46,6 +46,7 @@ import type { UserRole, Profile, Notification } from "@/lib/types/database"
 const roleNavItems: Record<UserRole, { href: string; label: string; icon: React.ElementType }[]> = {
   customer: [
     { href: "/customer/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/browse", label: "Browse Gifts", icon: Gift },
     { href: "/customer/requests", label: "My Requests", icon: Package },
     { href: "/customer/chats", label: "Messages", icon: MessageSquare },
   ],

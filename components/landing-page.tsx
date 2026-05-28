@@ -84,6 +84,9 @@ export function LandingPage() {
             <span className="font-bold text-xl">Giftra</span>
           </Link>
           <nav className="hidden md:flex items-center gap-6">
+            <Link href="/browse" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              Browse Gifts
+            </Link>
             <Link href="#how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
               How it Works
             </Link>
@@ -122,9 +125,9 @@ export function LandingPage() {
             Secure payments, protected communication, and quality guaranteed.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/auth/signup?role=customer">
+            <Link href="/browse">
               <Button size="lg" className="w-full sm:w-auto gap-2">
-                Start as Customer
+                Browse Custom Gifts
                 <ArrowRight className="w-4 h-4" />
               </Button>
             </Link>

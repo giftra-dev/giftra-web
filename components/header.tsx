@@ -8,6 +8,9 @@ export function Header() {
           <span className="font-serif text-2xl font-medium text-foreground">Giftra</span>
         </Link>
         <nav className="hidden items-center gap-8 md:flex">
+          <Link href="/browse" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+            Browse Gifts
+          </Link>
           <Link href="#how-it-works" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
             How It Works
           </Link>
@@ -19,15 +22,15 @@ export function Header() {
           </Link>
         </nav>
         <div className="flex items-center gap-3">
-            <button className="hidden md:inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium
+            <Link href="/auth/login" className="hidden md:inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium
              text-gray-700 hover:bg-gray-100 transition">
                 Log in
-            </button>
+            </Link>
 
-            <button className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium
+            <Link href="/browse" className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium
                         bg-black text-white hover:bg-gray-800 transition">
-                Get Started
-            </button>
+                Browse Gifts
+            </Link>
 
         </div>
       </div>

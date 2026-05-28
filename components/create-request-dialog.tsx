@@ -33,30 +33,48 @@ interface CreateRequestDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess?: () => void
+  initialTitle?: string
+  initialDescription?: string
+  initialCategory?: GiftCategory
+  initialBudgetMin?: number
+  initialBudgetMax?: number
+  preferredArtistId?: string
+  inspirationArtworkId?: string
 }
 
-export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateRequestDialogProps) {
+export function CreateRequestDialog({
+  open,
+  onOpenChange,
+  onSuccess,
+  initialTitle,
+  initialDescription,
+  initialCategory,
+  initialBudgetMin,
+  initialBudgetMax,
+  preferredArtistId,
+  inspirationArtworkId,
+}: CreateRequestDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   
-  const [title, setTitle] = useState("")
-  const [category, setCategory] = useState<GiftCategory | "">("")
-  const [description, setDescription] = useState("")
+  const [title, setTitle] = useState(initialTitle || "")
+  const [category, setCategory] = useState<GiftCategory | "">(initialCategory || "")
+  const [description, setDescription] = useState(initialDescription || "")
   const [recipientName, setRecipientName] = useState("")
   const [occasion, setOccasion] = useState("")
-  const [budgetMin, setBudgetMin] = useState("")
-  const [budgetMax, setBudgetMax] = useState("")
+  const [budgetMin, setBudgetMin] = useState(initialBudgetMin?.toString() || "")
+  const [budgetMax, setBudgetMax] = useState(initialBudgetMax?.toString() || "")
   const [deadline, setDeadline] = useState("")
   const [referenceFiles, setReferenceFiles] = useState<File[]>([])
 
   const resetForm = () => {
-    setTitle("")
-    setCategory("")
-    setDescription("")
+    setTitle(initialTitle || "")
+    setCategory(initialCategory || "")
+    setDescription(initialDescription || "")
     setRecipientName("")
     setOccasion("")
-    setBudgetMin("")
-    setBudgetMax("")
+    setBudgetMin(initialBudgetMin?.toString() || "")
+    setBudgetMax(initialBudgetMax?.toString() || "")
     setDeadline("")
     setReferenceFiles([])
     setError("")
@@ -111,6 +129,8 @@ export function CreateRequestDialog({ open, onOpenChange, onSuccess }: CreateReq
         budget_max: maxBudget,
         deadline: deadline || undefined,
         reference_images: referenceImages.filter((url): url is string => Boolean(url)),
+        preferred_artist_id: preferredArtistId,
+        inspiration_artwork_id: inspirationArtworkId,
       })
 
       if (requestError) {
