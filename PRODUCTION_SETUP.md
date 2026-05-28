@@ -8,15 +8,16 @@ Giftra is a controlled transaction and collaboration system. The production app 
 2. Enable Email/Password auth and Google OAuth in Authentication providers.
 3. Run `supabase/schema.sql` in the SQL editor for the base schema.
 4. Run `supabase/production-workflow.sql` for the production workflow tables, RPCs, RLS policies, payments, disputes, storage buckets, and locked chat rules.
-5. Enable Realtime for:
+5. Optional demo catalog: run `supabase/sample-marketplace.sql` to create 15 sample artists, 120 public artwork listings, and sample reviews for the homepage marketplace.
+6. Enable Realtime for:
    - `giftra_chat_rooms`
    - `giftra_messages`
    - `giftra_orders`
    - `gift_requests`
-6. Verify private storage buckets exist:
+7. Verify private storage buckets exist:
    - `reference-images`
    - `order-artwork`
-7. Create at least one admin user by signing up, then running:
+8. Create at least one admin user by signing up, then running:
 
 ```sql
 update public.profiles
@@ -76,6 +77,8 @@ The public browse experience uses `artist_artworks` plus artist profile fields. 
 - Create the public `artist-artworks` storage bucket.
 
 Artists add sample work from `/artist/settings`. Customers and anonymous visitors browse at `/browse`, favorite work locally in the browser, and start a request from a selected artwork.
+
+For local/demo catalogs, run `supabase/sample-marketplace.sql` after the schema files. The sample portfolio photos are external placeholder images; replace them with real uploads in `artist-artworks` before production use.
 
 ## Workflow Guarantees
 

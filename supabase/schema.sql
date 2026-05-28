@@ -28,11 +28,16 @@ CREATE TYPE request_status AS ENUM (
 
 -- Order status (after payment)
 CREATE TYPE order_status AS ENUM (
-  'pending_payment',     -- Waiting for customer payment
+  'draft',               -- Order created but not ready for payment
+  'awaiting_payment',    -- Waiting for customer payment
   'paid',                -- Payment received
-  'in_production',       -- Artist working on physical item
+  'in_progress',         -- Artist working on the custom gift
+  'preview_shared',      -- Artist shared a preview for approval
+  'revision_requested',  -- Customer requested changes
+  'ready_to_ship',       -- Gift is complete and ready to ship
   'shipped',             -- Item shipped
   'delivered',           -- Item delivered to customer
+  'completed',           -- Customer accepted / order closed
   'refunded'             -- Order refunded
 );
 
@@ -205,7 +210,7 @@ CREATE TABLE orders (
   
   -- Order details
   order_number TEXT NOT NULL UNIQUE,
-  status order_status NOT NULL DEFAULT 'pending_payment',
+  status order_status NOT NULL DEFAULT 'awaiting_payment',
   
   -- Pricing
   subtotal DECIMAL(10,2) NOT NULL,
