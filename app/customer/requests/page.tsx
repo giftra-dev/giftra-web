@@ -1,12 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
 import { 
   Plus, 
   Search,
@@ -14,7 +15,6 @@ import {
   Calendar,
   Filter
 } from "lucide-react"
-import { useGiftraStore, type RequestStatus } from "@/lib/store"
 import { CreateRequestDialog } from "@/components/create-request-dialog"
 import {
   Select,
@@ -23,51 +23,141 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { createClient } from "@/lib/supabase/client"
+import { getCustomerRequests, getChatRoomByRequestId } from "@/lib/supabase/queries"
+import type { RequestStatus } from "@/lib/types/database"
 
 const statusColors: Record<RequestStatus, string> = {
-  pending: "bg-muted text-muted-foreground",
-  admin_review: "bg-warning/20 text-warning-foreground border-warning/30",
-  artist_assigned: "bg-info/20 text-info-foreground border-info/30",
-  awaiting_payment: "bg-accent text-accent-foreground",
+  pending_review: "bg-muted text-muted-foreground",
+  approved: "bg-warning/20 text-warning-foreground border-warning/30",
+  assigned: "bg-info/20 text-info-foreground border-info/30",
   in_progress: "bg-primary/20 text-primary border-primary/30",
   completed: "bg-success/20 text-success-foreground border-success/30",
+  delivered: "bg-success/20 text-success-foreground border-success/30",
   cancelled: "bg-destructive/20 text-destructive-foreground border-destructive/30",
+  rejected: "bg-destructive/20 text-destructive-foreground border-destructive/30",
 }
 
 const statusLabels: Record<RequestStatus, string> = {
-  pending: "Pending",
-  admin_review: "Under Review",
-  artist_assigned: "Artist Assigned",
-  awaiting_payment: "Awaiting Payment",
+  pending_review: "Pending Review",
+  approved: "Approved",
+  assigned: "Artist Assigned",
   in_progress: "In Progress",
   completed: "Completed",
+  delivered: "Delivered",
   cancelled: "Cancelled",
+  rejected: "Rejected",
+}
+
+interface RequestWithChat {
+  id: string
+  title: string
+  description: string
+  category: string
+  status: RequestStatus
+  deadline: string | null
+  budget_min: number | null
+  budget_max: number | null
+  final_price: number | null
+  created_at: string
+  chat_room_id?: string | null
 }
 
 function CustomerRequestsContent() {
   const [createOpen, setCreateOpen] = useState(false)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [requests, setRequests] = useState<RequestWithChat[]>([])
+  const [loading, setLoading] = useState(true)
+  const [userId, setUserId] = useState<string | null>(null)
   
-  const { currentUser, requests, chatRooms } = useGiftraStore()
+  const supabase = createClient()
 
-  if (!currentUser) return null
+  useEffect(() => {
+    async function loadData() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      
+      setUserId(user.id)
+      
+      const { data: requestsData } = await getCustomerRequests(supabase, user.id)
+      
+      if (requestsData) {
+        // Load chat rooms for each request
+        const requestsWithChat = await Promise.all(
+          requestsData.map(async (req) => {
+            const { data: chatRoom } = await getChatRoomByRequestId(supabase, req.id)
+            return {
+              ...req,
+              chat_room_id: chatRoom?.id || null
+            }
+          })
+        )
+        setRequests(requestsWithChat as RequestWithChat[])
+      }
+      setLoading(false)
+    }
+    
+    loadData()
+  }, [])
 
-  const myRequests = requests
-    .filter(r => r.customerId === currentUser.id)
+  const filteredRequests = requests
     .filter(r => statusFilter === "all" || r.status === statusFilter)
     .filter(r => 
-      r.category.toLowerCase().includes(search.toLowerCase()) ||
-      r.description.toLowerCase().includes(search.toLowerCase())
+      r.title.toLowerCase().includes(search.toLowerCase()) ||
+      r.description.toLowerCase().includes(search.toLowerCase()) ||
+      r.category.toLowerCase().includes(search.toLowerCase())
     )
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+  const handleRequestCreated = async () => {
+    if (!userId) return
+    const { data: requestsData } = await getCustomerRequests(supabase, userId)
+    if (requestsData) {
+      const requestsWithChat = await Promise.all(
+        requestsData.map(async (req) => {
+          const { data: chatRoom } = await getChatRoomByRequestId(supabase, req.id)
+          return {
+            ...req,
+            chat_room_id: chatRoom?.id || null
+          }
+        })
+      )
+      setRequests(requestsWithChat as RequestWithChat[])
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton className="h-8 w-40" />
+            <Skeleton className="h-4 w-60 mt-2" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="flex gap-4">
+          <Skeleton className="h-10 flex-1" />
+          <Skeleton className="h-10 w-[180px]" />
+        </div>
+        <Card>
+          <CardContent className="p-4 space-y-4">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-24 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">My Requests</h1>
+          <h1 className="text-2xl font-bold text-foreground">My Requests</h1>
           <p className="text-muted-foreground">View and manage all your gift requests</p>
         </div>
         <Button onClick={() => setCreateOpen(true)} className="gap-2">
@@ -94,11 +184,12 @@ function CustomerRequestsContent() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="admin_review">Under Review</SelectItem>
-            <SelectItem value="artist_assigned">Artist Assigned</SelectItem>
+            <SelectItem value="pending_review">Pending Review</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="assigned">Artist Assigned</SelectItem>
             <SelectItem value="in_progress">In Progress</SelectItem>
             <SelectItem value="completed">Completed</SelectItem>
+            <SelectItem value="delivered">Delivered</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -106,7 +197,7 @@ function CustomerRequestsContent() {
       {/* Requests List */}
       <Card>
         <CardContent className="p-0">
-          {myRequests.length === 0 ? (
+          {filteredRequests.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-muted-foreground mb-4">No requests found</p>
               <Button onClick={() => setCreateOpen(true)} variant="outline" className="gap-2">
@@ -116,62 +207,68 @@ function CustomerRequestsContent() {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {myRequests.map((request) => {
-                const chatRoom = chatRooms.find(c => c.requestId === request.id)
-                return (
-                  <div
-                    key={request.id}
-                    className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-1">
-                        <h3 className="font-medium">{request.category}</h3>
-                        <Badge variant="outline" className={statusColors[request.status]}>
-                          {statusLabels[request.status]}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground line-clamp-1">
-                        {request.description}
-                      </p>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+              {filteredRequests.map((request) => (
+                <div
+                  key={request.id}
+                  className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-1">
+                      <h3 className="font-medium text-foreground">{request.title}</h3>
+                      <Badge variant="outline" className={statusColors[request.status]}>
+                        {statusLabels[request.status]}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground line-clamp-1">
+                      {request.description}
+                    </p>
+                    <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                      <span className="capitalize">{request.category.replace(/_/g, ' ')}</span>
+                      {request.deadline && (
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
                           Due: {new Date(request.deadline).toLocaleDateString()}
                         </span>
-                        <span>
-                          Budget: ${request.budgetMin} - ${request.budgetMax}
-                        </span>
-                        {request.adminPrice && (
-                          <span className="text-primary font-medium">
-                            Final: ${request.adminPrice}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 ml-4">
-                      {chatRoom && !chatRoom.isLocked && (
-                        <Link href={`/chat/${chatRoom.id}`}>
-                          <Button size="sm" variant="outline" className="gap-1">
-                            <MessageSquare className="w-4 h-4" />
-                            Chat
-                          </Button>
-                        </Link>
                       )}
-                      <Link href={`/customer/request/${request.id}`}>
-                        <Button size="sm" variant="ghost">
-                          View
-                        </Button>
-                      </Link>
+                      {request.budget_min && request.budget_max && (
+                        <span>
+                          Budget: ${request.budget_min} - ${request.budget_max}
+                        </span>
+                      )}
+                      {request.final_price && (
+                        <span className="text-primary font-medium">
+                          Final: ${request.final_price}
+                        </span>
+                      )}
                     </div>
                   </div>
-                )
-              })}
+                  <div className="flex items-center gap-2 ml-4">
+                    {request.chat_room_id && (
+                      <Link href={`/chat/${request.chat_room_id}`}>
+                        <Button size="sm" variant="outline" className="gap-1">
+                          <MessageSquare className="w-4 h-4" />
+                          Chat
+                        </Button>
+                      </Link>
+                    )}
+                    <Link href={`/customer/request/${request.id}`}>
+                      <Button size="sm" variant="ghost">
+                        View
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
       </Card>
 
-      <CreateRequestDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <CreateRequestDialog 
+        open={createOpen} 
+        onOpenChange={setCreateOpen} 
+        onSuccess={handleRequestCreated}
+      />
     </div>
   )
 }
