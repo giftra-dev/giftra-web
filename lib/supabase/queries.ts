@@ -624,7 +624,7 @@ export async function getChatRoom(
   return data as ChatRoomWithRelations | null
 }
 
-export async function getChatRoomByRequest(
+export async function getChatRoomByRequestId(
   requestId: string
 ): Promise<ChatRoom | null> {
   const supabase = createClient()

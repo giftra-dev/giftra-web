@@ -20,7 +20,7 @@ import {
   getCustomerRequests, 
   getCustomerStats,
   getUserChatRooms,
-  getChatRoomByRequest
+  getChatRoomByRequestId
 } from "@/lib/supabase/queries"
 import type { RequestWithRelations, ChatRoomWithRelations } from "@/lib/types/database"
 import { REQUEST_STATUS_LABELS, CATEGORY_LABELS } from "@/lib/types/database"
