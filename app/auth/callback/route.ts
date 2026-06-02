@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
         .from('profiles')
         .select('id, role')
         .eq('id', data.user.id)
-        .single()
+        .maybeSingle()
 
       if (!existingProfile) {
         // Create profile for new OAuth user

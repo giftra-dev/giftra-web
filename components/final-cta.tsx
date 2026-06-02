@@ -12,14 +12,12 @@ export function FinalCta() {
             Start your custom gift journey today and create memories that last forever
           </p>
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <button className="inline-flex items-center justify-center rounded-md px-6 py-3 text-sm font-medium
-             bg-black text-white hover:bg-gray-800 transition">
+            <button className="inline-flex items-center justify-center rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">
                 Start a Custom Gift
                 <ArrowRight className="ml-2 h-4 w-4" />
             </button>
 
-            <button className="inline-flex items-center justify-center rounded-md px-6 py-3 text-sm font-medium
-                        border border-gray-300 text-gray-900 bg-transparent hover:bg-gray-100 transition">
+            <button className="inline-flex items-center justify-center rounded-md border border-border bg-background px-6 py-3 text-sm font-medium text-foreground transition hover:bg-accent hover:text-accent-foreground">
                 Explore Artists
             </button>
           </div>

@@ -22,13 +22,11 @@ export function Header() {
           </Link>
         </nav>
         <div className="flex items-center gap-3">
-            <Link href="/auth/login" className="hidden md:inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium
-             text-gray-700 hover:bg-gray-100 transition">
+            <Link href="/auth/login" className="hidden items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-accent-foreground md:inline-flex">
                 Log in
             </Link>
 
-            <Link href="/browse" className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium
-                        bg-black text-white hover:bg-gray-800 transition">
+            <Link href="/browse" className="inline-flex items-center justify-center rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">
                 Browse Gifts
             </Link>
 

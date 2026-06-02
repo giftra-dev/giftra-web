@@ -53,6 +53,7 @@ function SignupForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialRole = searchParams.get("role")
+  const next = searchParams.get("next")
   
   const [showPassword, setShowPassword] = useState(false)
   const [name, setName] = useState("")
@@ -78,7 +79,7 @@ function SignupForm() {
     setError("")
 
     try {
-      const { error: googleError } = await signInWithGoogle(role)
+      const { error: googleError } = await signInWithGoogle(role, next || undefined)
       if (googleError) {
         setError(googleError.message)
         setIsGoogleLoading(false)
@@ -103,7 +104,7 @@ function SignupForm() {
     }
 
     try {
-      const { data, error: signUpError } = await signUp(email, password, name, role)
+      const { data, error: signUpError } = await signUp(email, password, name, role, next || undefined)
 
       if (signUpError) {
         setError(signUpError.message)
@@ -113,7 +114,7 @@ function SignupForm() {
 
       if (data.session) {
         // User is signed in immediately (email confirmation disabled)
-        router.push(`/${role}/dashboard`)
+        router.push(next?.startsWith("/") && !next.startsWith("//") ? next : `/${role}/dashboard`)
         return
       }
 

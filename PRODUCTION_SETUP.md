@@ -32,7 +32,7 @@ Set these environment variables:
 ```txt
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL=https://your-domain.com/auth/callback
+NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL=https://www.giftra.co.in/auth/callback
 ```
 
 Optional local-only demo mode:
@@ -54,6 +54,13 @@ Required production work:
 2. Confirm payment in a provider webhook.
 3. Only after webhook confirmation, call the Supabase payment workflow/RPC or update the order with a real provider payment id.
 4. Keep `NEXT_PUBLIC_ENABLE_MOCK_PAYMENTS` unset in production.
+
+Recommended India-ready options:
+
+- Razorpay: useful for domestic payment methods and UPI.
+- Stripe: useful if your account/country setup supports the needed payment methods.
+
+Add provider secrets only as server-side Vercel environment variables. Never expose secret keys as `NEXT_PUBLIC_*`.
 
 ## Storage
 
@@ -79,6 +86,36 @@ The public browse experience uses `artist_artworks` plus artist profile fields. 
 Artists add sample work from `/artist/settings`. Customers and anonymous visitors browse at `/browse`, favorite work locally in the browser, and start a request from a selected artwork.
 
 For local/demo catalogs, run `supabase/sample-marketplace.sql` after the schema files. The sample portfolio photos are external placeholder images; replace them with real uploads in `artist-artworks` before production use.
+
+The marketplace also includes:
+
+- `/artwork/[id]` for public artwork detail pages.
+- `/category/[category]` for category landing pages.
+- `/wishlist` for browser-local saved artwork.
+- `/sitemap.xml` and `/robots.txt` for basic SEO discovery.
+
+Before launch, replace starter `/privacy` and `/terms` copy with counsel-approved legal text and add a real support email/contact route.
+
+## Email And Notifications
+
+Supabase Auth handles login and signup email. Production order notifications still need a transactional email provider.
+
+Recommended setup:
+
+1. Add Resend, SendGrid, Postmark, or another transactional provider.
+2. Send email on request submitted, request approved/rejected, artist assigned, payment received, preview shared, revision requested, shipped, delivered, and completed.
+3. Keep in-app notifications in the `notifications` table for dashboard visibility.
+4. Enable Realtime on `notifications`, `chat_rooms`, `messages`, `requests`, and `orders` if you want live updates.
+
+## Monitoring And Analytics
+
+Vercel Analytics is included. For production reliability, also add:
+
+- Error monitoring such as Sentry.
+- Payment webhook logs.
+- Admin audit log review.
+- Uptime monitoring for `https://www.giftra.co.in`.
+- Conversion events for search, wishlist, request creation, payment, and completed order.
 
 ## Workflow Guarantees
 
