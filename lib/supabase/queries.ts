@@ -33,9 +33,18 @@ function getAuthRedirectUrl() {
   if (!configured) return fallback
 
   try {
-    const url = new URL(configured)
+    const normalized =
+      configured.includes('://') || configured.startsWith('/')
+        ? configured
+        : `https://${configured}`
+    const url = new URL(normalized, window.location.origin)
+
     if (url.pathname === '/auth/v1/callback') {
       return fallback
+    }
+    if (url.pathname === '/' || url.pathname === '') {
+      url.pathname = '/auth/callback'
+      return url.toString()
     }
   } catch {
     return fallback
