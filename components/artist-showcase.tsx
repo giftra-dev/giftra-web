@@ -55,7 +55,7 @@ export function ArtistShowcase() {
               <h3 className="mb-1 text-lg font-semibold text-foreground">{artist.name}</h3>
               <p className="mb-2 text-sm text-muted-foreground">{artist.style}</p>
               <p className="mb-4 text-sm font-medium text-primary">From {artist.startingPrice}</p>
-              <button className="w-full bg-transparent border border-gray-300 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-gray-100 transition">
+              <button className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium transition hover:bg-accent hover:text-accent-foreground">
                 View Profile
               </button>
             </div>
