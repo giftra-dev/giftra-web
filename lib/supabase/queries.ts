@@ -26,6 +26,24 @@ import type {
 // AUTH FUNCTIONS
 // =====================================================
 
+function getAuthRedirectUrl() {
+  const configured = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL
+  const fallback = `${window.location.origin}/auth/callback`
+
+  if (!configured) return fallback
+
+  try {
+    const url = new URL(configured)
+    if (url.pathname === '/auth/v1/callback') {
+      return fallback
+    }
+  } catch {
+    return fallback
+  }
+
+  return configured
+}
+
 export async function signUp(
   email: string,
   password: string,
@@ -37,9 +55,7 @@ export async function signUp(
     email,
     password,
     options: {
-      emailRedirectTo:
-        process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ??
-        `${window.location.origin}/auth/callback`,
+      emailRedirectTo: getAuthRedirectUrl(),
       data: {
         full_name: fullName,
         role: role,
@@ -60,9 +76,7 @@ export async function signIn(email: string, password: string) {
 
 export async function signInWithGoogle(role?: UserRole) {
   const supabase = createClient()
-  const baseRedirectTo =
-    process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ??
-    `${window.location.origin}/auth/callback`
+  const baseRedirectTo = getAuthRedirectUrl()
   const redirectTo = role
     ? `${baseRedirectTo}${baseRedirectTo.includes('?') ? '&' : '?'}signup_role=${role}`
     : baseRedirectTo
