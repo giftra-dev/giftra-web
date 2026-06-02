@@ -57,14 +57,20 @@ export async function signUp(
   email: string,
   password: string,
   fullName: string,
-  role: UserRole = 'customer'
+  role: UserRole = 'customer',
+  next?: string
 ) {
   const supabase = createClient()
+  const redirectBase = getAuthRedirectUrl()
+  const emailRedirectTo = next?.startsWith('/') && !next.startsWith('//')
+    ? `${redirectBase}${redirectBase.includes('?') ? '&' : '?'}next=${encodeURIComponent(next)}`
+    : redirectBase
+
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      emailRedirectTo: getAuthRedirectUrl(),
+      emailRedirectTo,
       data: {
         full_name: fullName,
         role: role,
@@ -83,17 +89,19 @@ export async function signIn(email: string, password: string) {
   return { data, error }
 }
 
-export async function signInWithGoogle(role?: UserRole) {
+export async function signInWithGoogle(role?: UserRole, next?: string) {
   const supabase = createClient()
   const baseRedirectTo = getAuthRedirectUrl()
-  const redirectTo = role
-    ? `${baseRedirectTo}${baseRedirectTo.includes('?') ? '&' : '?'}signup_role=${role}`
-    : baseRedirectTo
+  const redirectUrl = new URL(baseRedirectTo)
+  if (role) redirectUrl.searchParams.set('signup_role', role)
+  if (next?.startsWith('/') && !next.startsWith('//')) {
+    redirectUrl.searchParams.set('next', next)
+  }
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo,
+      redirectTo: redirectUrl.toString(),
       queryParams: {
         access_type: 'offline',
         prompt: 'consent',
@@ -125,9 +133,33 @@ export async function getCurrentProfile(): Promise<Profile | null> {
     .from('profiles')
     .select('*')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
+
+  if (data) return data
+
+  const role = user.user_metadata?.role
+  const profileRole: UserRole =
+    role === 'artist' || role === 'admin' || role === 'customer'
+      ? role
+      : 'customer'
+
+  const { data: createdProfile } = await supabase
+    .from('profiles')
+    .insert({
+      id: user.id,
+      email: user.email || '',
+      full_name:
+        user.user_metadata?.full_name ||
+        user.user_metadata?.name ||
+        user.email?.split('@')[0] ||
+        'Giftra user',
+      avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+      role: profileRole,
+    })
+    .select('*')
+    .maybeSingle()
   
-  return data
+  return createdProfile
 }
 
 // =====================================================
@@ -711,6 +743,29 @@ export async function getPublicArtworks(): Promise<ArtistArtworkWithArtist[]> {
     .order('created_at', { ascending: false })
 
   return (data || []) as ArtistArtworkWithArtist[]
+}
+
+export async function getPublicArtworkById(artworkId: string): Promise<ArtistArtworkWithArtist | null> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('artist_artworks')
+    .select(`
+      *,
+      artist:profiles!artist_artworks_artist_id_fkey(
+        id,
+        avatar_url,
+        bio,
+        specialties,
+        rating,
+        total_reviews,
+        is_available
+      )
+    `)
+    .eq('id', artworkId)
+    .eq('is_public', true)
+    .maybeSingle()
+
+  return data as ArtistArtworkWithArtist | null
 }
 
 export async function getArtistPortfolio(

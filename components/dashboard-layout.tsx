@@ -79,6 +79,10 @@ interface UserState {
   avatar?: string
 }
 
+function isUserRole(role: unknown): role is UserRole {
+  return role === "customer" || role === "artist" || role === "admin"
+}
+
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -101,17 +105,41 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         getCurrentProfile(),
       ])
 
-      if (!user || !profile) {
+      if (!user) {
         router.push('/auth/login')
         return
       }
 
+      const userRole = isUserRole(profile?.role)
+        ? profile.role
+        : isUserRole(user.user_metadata?.role)
+          ? user.user_metadata.role
+          : "customer"
+
+      const resolvedProfile: Profile = profile ?? {
+        id: user.id,
+        email: user.email ?? "",
+        full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "Giftra user",
+        avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+        phone: null,
+        role: userRole,
+        bio: null,
+        portfolio_url: null,
+        specialties: [],
+        rating: 0,
+        total_reviews: 0,
+        is_available: true,
+        is_super_admin: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+
       setCurrentUser({
         id: user.id,
-        email: user.email ?? profile.email ?? "",
-        name: profile.full_name || user.email || "Giftra user",
-        role: profile.role,
-        avatar: profile.avatar_url ?? undefined,
+        email: user.email ?? resolvedProfile.email ?? "",
+        name: resolvedProfile.full_name || user.email || "Giftra user",
+        role: resolvedProfile.role,
+        avatar: resolvedProfile.avatar_url ?? undefined,
       })
 
       // Load unread notifications

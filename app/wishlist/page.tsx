@@ -1,0 +1,111 @@
+"use client"
+
+import { useEffect, useMemo, useState } from "react"
+import Link from "next/link"
+import { ArtworkCard } from "@/components/marketplace/artwork-card"
+import { MarketplaceHeader } from "@/components/marketplace/marketplace-header"
+import { readWishlist, writeWishlist } from "@/components/marketplace/utils"
+import { CreateRequestDialog } from "@/components/create-request-dialog"
+import { Button } from "@/components/ui/button"
+import { getCurrentUser, getPublicArtworks } from "@/lib/supabase/queries"
+import type { ArtistArtworkWithArtist, GiftCategory } from "@/lib/types/database"
+import { Heart } from "lucide-react"
+
+export default function WishlistPage() {
+  const [artworks, setArtworks] = useState<ArtistArtworkWithArtist[]>([])
+  const [favorites, setFavorites] = useState<string[]>([])
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [selectedArtwork, setSelectedArtwork] = useState<ArtistArtworkWithArtist | null>(null)
+  const [requestOpen, setRequestOpen] = useState(false)
+
+  useEffect(() => {
+    async function loadWishlist() {
+      const wishlist = readWishlist()
+      setFavorites(wishlist)
+      const [items, userData] = await Promise.all([
+        getPublicArtworks(),
+        getCurrentUser().catch(() => ({ user: null })),
+      ])
+      setArtworks(items)
+      setIsLoggedIn(Boolean(userData.user))
+    }
+
+    loadWishlist()
+  }, [])
+
+  const savedArtworks = useMemo(() => {
+    return artworks.filter((artwork) => favorites.includes(artwork.id))
+  }, [artworks, favorites])
+
+  const toggleFavorite = (artworkId: string) => {
+    setFavorites((current) => {
+      const next = current.includes(artworkId)
+        ? current.filter((id) => id !== artworkId)
+        : [...current, artworkId]
+      writeWishlist(next)
+      return next
+    })
+  }
+
+  return (
+    <main className="min-h-screen bg-muted/30">
+      <MarketplaceHeader wishlistCount={favorites.length} />
+      <div className="container mx-auto px-4 py-6">
+        <section className="rounded-md border bg-card p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
+              <Heart className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">Wishlist</h1>
+              <p className="text-sm text-muted-foreground">Saved custom gift ideas live in this browser.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="py-5">
+          {savedArtworks.length === 0 ? (
+            <div className="rounded-md border border-dashed bg-card p-10 text-center">
+              <p className="font-medium">Your wishlist is empty</p>
+              <p className="mt-1 text-sm text-muted-foreground">Save artwork samples while browsing and come back when you are ready to request.</p>
+              <Button asChild className="mt-5">
+                <Link href="/">Browse marketplace</Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {savedArtworks.map((artwork) => (
+                <ArtworkCard
+                  key={artwork.id}
+                  artwork={artwork}
+                  isFavorite={favorites.includes(artwork.id)}
+                  isLoggedIn={isLoggedIn}
+                  onFavorite={() => toggleFavorite(artwork.id)}
+                  onRequest={() => {
+                    setSelectedArtwork(artwork)
+                    setRequestOpen(true)
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {selectedArtwork && (
+        <CreateRequestDialog
+          key={selectedArtwork.id}
+          open={requestOpen}
+          onOpenChange={setRequestOpen}
+          initialTitle={`Custom gift inspired by ${selectedArtwork.title}`}
+          initialDescription={`I like this style: ${selectedArtwork.title}. ${selectedArtwork.description || ""}`.trim()}
+          initialCategory={selectedArtwork.category as GiftCategory}
+          initialBudgetMin={selectedArtwork.price_min || undefined}
+          initialBudgetMax={selectedArtwork.price_max || selectedArtwork.price_min || undefined}
+          preferredArtistId={selectedArtwork.artist_id}
+          inspirationArtworkId={selectedArtwork.id}
+        />
+      )}
+    </main>
+  )
+}
