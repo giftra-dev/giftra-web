@@ -474,5 +474,30 @@ $$;
 insert into storage.buckets (id, name, public)
 values
   ('reference-images', 'reference-images', false),
-  ('order-artwork', 'order-artwork', false)
+  ('order-artwork', 'order-artwork', false),
+  ('artist-artworks', 'artist-artworks', true)
 on conflict (id) do nothing;
+
+drop policy if exists "authenticated_upload_reference_images" on storage.objects;
+create policy "authenticated_upload_reference_images"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'reference-images');
+
+drop policy if exists "authenticated_upload_order_artwork" on storage.objects;
+create policy "authenticated_upload_order_artwork"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'order-artwork');
+
+drop policy if exists "artists_upload_artist_artworks" on storage.objects;
+create policy "artists_upload_artist_artworks"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'artist-artworks');
+
+drop policy if exists "authenticated_read_uploaded_assets" on storage.objects;
+create policy "authenticated_read_uploaded_assets"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id in ('reference-images', 'order-artwork', 'artist-artworks'));

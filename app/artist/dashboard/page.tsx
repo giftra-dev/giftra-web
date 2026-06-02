@@ -169,12 +169,12 @@ function ArtistDashboardContent() {
             <CardTitle>Active Orders</CardTitle>
             <CardDescription>Orders that need your attention</CardDescription>
           </div>
-          <Link href="/artist/orders">
-            <Button variant="ghost" size="sm" className="gap-1">
+          <Button asChild variant="ghost" size="sm" className="gap-1">
+            <Link href="/artist/orders">
               View all
               <ArrowRight className="w-4 h-4" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </CardHeader>
         <CardContent>
           {activeOrders.length === 0 ? (
@@ -222,12 +222,12 @@ function ArtistDashboardContent() {
                     </div>
                     <div className="flex items-center gap-2 ml-4">
                       {chatRoom && (
-                        <Link href={`/chat/${chatRoom.id}`}>
-                          <Button size="sm" variant="outline" className="gap-1">
+                        <Button asChild size="sm" variant="outline" className="gap-1">
+                          <Link href={`/chat/${chatRoom.id}`}>
                             <MessageSquare className="w-4 h-4" />
                             Chat
-                          </Button>
-                        </Link>
+                          </Link>
+                        </Button>
                       )}
                     </div>
                   </div>

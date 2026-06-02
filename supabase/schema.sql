@@ -28,11 +28,16 @@ CREATE TYPE request_status AS ENUM (
 
 -- Order status (after payment)
 CREATE TYPE order_status AS ENUM (
-  'pending_payment',     -- Waiting for customer payment
+  'draft',               -- Order created but not ready for payment
+  'awaiting_payment',    -- Waiting for customer payment
   'paid',                -- Payment received
-  'in_production',       -- Artist working on physical item
+  'in_progress',         -- Artist working on the custom gift
+  'preview_shared',      -- Artist shared a preview for approval
+  'revision_requested',  -- Customer requested changes
+  'ready_to_ship',       -- Gift is complete and ready to ship
   'shipped',             -- Item shipped
   'delivered',           -- Item delivered to customer
+  'completed',           -- Customer accepted / order closed
   'refunded'             -- Order refunded
 );
 
@@ -97,6 +102,7 @@ CREATE TABLE requests (
   -- Relationships
   customer_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   assigned_artist_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  preferred_artist_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
   approved_by_admin_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
   
   -- Request details
@@ -104,6 +110,7 @@ CREATE TABLE requests (
   description TEXT NOT NULL,
   category gift_category NOT NULL,
   reference_images TEXT[] DEFAULT '{}',
+  inspiration_artwork_id UUID,
   
   -- Recipient info
   recipient_name TEXT,
@@ -128,6 +135,27 @@ CREATE TABLE requests (
   assigned_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ
 );
+
+-- Public artist portfolio / marketplace artworks
+CREATE TABLE artist_artworks (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  artist_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  category gift_category NOT NULL,
+  image_url TEXT NOT NULL,
+  price_min DECIMAL(10,2),
+  price_max DECIMAL(10,2),
+  tags TEXT[] DEFAULT '{}',
+  is_featured BOOLEAN DEFAULT false,
+  is_public BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE requests
+  ADD CONSTRAINT requests_inspiration_artwork_id_fkey
+  FOREIGN KEY (inspiration_artwork_id) REFERENCES artist_artworks(id) ON DELETE SET NULL;
 
 -- Chat Rooms table
 CREATE TABLE chat_rooms (
@@ -182,7 +210,7 @@ CREATE TABLE orders (
   
   -- Order details
   order_number TEXT NOT NULL UNIQUE,
-  status order_status NOT NULL DEFAULT 'pending_payment',
+  status order_status NOT NULL DEFAULT 'awaiting_payment',
   
   -- Pricing
   subtotal DECIMAL(10,2) NOT NULL,
@@ -271,6 +299,8 @@ CREATE INDEX idx_profiles_email ON profiles(email);
 -- Requests indexes
 CREATE INDEX idx_requests_customer ON requests(customer_id);
 CREATE INDEX idx_requests_artist ON requests(assigned_artist_id);
+CREATE INDEX idx_requests_preferred_artist ON requests(preferred_artist_id);
+CREATE INDEX idx_requests_inspiration_artwork ON requests(inspiration_artwork_id);
 CREATE INDEX idx_requests_status ON requests(status);
 CREATE INDEX idx_requests_category ON requests(category);
 CREATE INDEX idx_requests_created ON requests(created_at DESC);
@@ -284,6 +314,12 @@ CREATE INDEX idx_chat_rooms_artist ON chat_rooms(artist_id);
 CREATE INDEX idx_messages_chat_room ON messages(chat_room_id);
 CREATE INDEX idx_messages_sender ON messages(sender_id);
 CREATE INDEX idx_messages_created ON messages(created_at DESC);
+
+-- Artist artworks indexes
+CREATE INDEX idx_artist_artworks_artist ON artist_artworks(artist_id);
+CREATE INDEX idx_artist_artworks_category ON artist_artworks(category);
+CREATE INDEX idx_artist_artworks_public ON artist_artworks(is_public);
+CREATE INDEX idx_artist_artworks_created ON artist_artworks(created_at DESC);
 
 -- Orders indexes
 CREATE INDEX idx_orders_customer ON orders(customer_id);
@@ -306,6 +342,7 @@ ALTER TABLE chat_rooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE artist_artworks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
 
@@ -500,6 +537,35 @@ CREATE POLICY "Customers can create reviews"
 -- Artists can respond to reviews
 CREATE POLICY "Artists can respond to reviews"
   ON reviews FOR UPDATE
+  USING (auth.uid() = artist_id);
+
+-- =====================================================
+-- ARTIST ARTWORKS POLICIES
+-- =====================================================
+
+-- Anyone can browse public artworks
+CREATE POLICY "Anyone can view public artist artworks"
+  ON artist_artworks FOR SELECT
+  USING (is_public = true);
+
+-- Artists can view all of their own artworks
+CREATE POLICY "Artists can view own artworks"
+  ON artist_artworks FOR SELECT
+  USING (auth.uid() = artist_id);
+
+-- Artists can create portfolio artworks
+CREATE POLICY "Artists can create own artworks"
+  ON artist_artworks FOR INSERT
+  WITH CHECK (auth.uid() = artist_id);
+
+-- Artists can update their portfolio artworks
+CREATE POLICY "Artists can update own artworks"
+  ON artist_artworks FOR UPDATE
+  USING (auth.uid() = artist_id);
+
+-- Artists can delete their portfolio artworks
+CREATE POLICY "Artists can delete own artworks"
+  ON artist_artworks FOR DELETE
   USING (auth.uid() = artist_id);
 
 -- =====================================================

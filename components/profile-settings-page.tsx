@@ -11,10 +11,24 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
-import { getCurrentProfile, updateProfile } from "@/lib/supabase/queries"
-import type { GiftCategory, Profile, UpdateProfileInput, UserRole } from "@/lib/types/database"
+import {
+  createArtistArtwork,
+  deleteArtistArtwork,
+  getCurrentProfile,
+  getMyArtistArtworks,
+  updateProfile,
+  uploadFileToStorage,
+} from "@/lib/supabase/queries"
+import type { ArtistArtwork, GiftCategory, Profile, UpdateProfileInput, UserRole } from "@/lib/types/database"
 import { CATEGORY_LABELS } from "@/lib/types/database"
-import { Check, Save } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Check, ImagePlus, Save, Trash2 } from "lucide-react"
 
 const categories = Object.entries(CATEGORY_LABELS).map(([value, label]) => ({
   value: value as GiftCategory,
@@ -31,6 +45,15 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
   const [isAvailable, setIsAvailable] = useState(true)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [artworks, setArtworks] = useState<ArtistArtwork[]>([])
+  const [artworkTitle, setArtworkTitle] = useState("")
+  const [artworkDescription, setArtworkDescription] = useState("")
+  const [artworkCategory, setArtworkCategory] = useState<GiftCategory>("portrait")
+  const [artworkPriceMin, setArtworkPriceMin] = useState("")
+  const [artworkPriceMax, setArtworkPriceMax] = useState("")
+  const [artworkTags, setArtworkTags] = useState("")
+  const [artworkFile, setArtworkFile] = useState<File | null>(null)
+  const [isAddingArtwork, setIsAddingArtwork] = useState(false)
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
 
@@ -45,6 +68,9 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
         setPortfolioUrl(currentProfile.portfolio_url || "")
         setSpecialties(currentProfile.specialties || [])
         setIsAvailable(currentProfile.is_available)
+        if (currentProfile.role === "artist") {
+          setArtworks(await getMyArtistArtworks(currentProfile.id))
+        }
       }
       setIsLoading(false)
     }
@@ -89,6 +115,70 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
     }
 
     setIsSaving(false)
+  }
+
+  const resetArtworkForm = () => {
+    setArtworkTitle("")
+    setArtworkDescription("")
+    setArtworkCategory("portrait")
+    setArtworkPriceMin("")
+    setArtworkPriceMax("")
+    setArtworkTags("")
+    setArtworkFile(null)
+  }
+
+  const handleAddArtwork = async () => {
+    if (!profile || !artworkFile || !artworkTitle) {
+      setError("Please add a title and artwork image.")
+      return
+    }
+
+    setIsAddingArtwork(true)
+    setError("")
+    setMessage("")
+
+    const safeName = artworkFile.name.replace(/[^a-zA-Z0-9._-]/g, "-")
+    const { url, error: uploadError } = await uploadFileToStorage(
+      "artist-artworks",
+      `${profile.id}/${Date.now()}-${safeName}`,
+      artworkFile
+    )
+
+    if (uploadError || !url) {
+      setError(uploadError?.message || "Unable to upload artwork.")
+      setIsAddingArtwork(false)
+      return
+    }
+
+    const { data, error: createError } = await createArtistArtwork({
+      artist_id: profile.id,
+      title: artworkTitle,
+      description: artworkDescription || undefined,
+      category: artworkCategory,
+      image_url: url,
+      price_min: artworkPriceMin ? Number.parseInt(artworkPriceMin, 10) : undefined,
+      price_max: artworkPriceMax ? Number.parseInt(artworkPriceMax, 10) : undefined,
+      tags: artworkTags.split(",").map((tag) => tag.trim()).filter(Boolean),
+    })
+
+    if (createError) {
+      setError(createError.message)
+    } else if (data) {
+      setArtworks((current) => [data, ...current])
+      setMessage("Artwork added to your public portfolio.")
+      resetArtworkForm()
+    }
+
+    setIsAddingArtwork(false)
+  }
+
+  const handleDeleteArtwork = async (artworkId: string) => {
+    const { error: deleteError } = await deleteArtistArtwork(artworkId)
+    if (deleteError) {
+      setError(deleteError.message)
+      return
+    }
+    setArtworks((current) => current.filter((artwork) => artwork.id !== artworkId))
   }
 
   if (isLoading) {
@@ -154,47 +244,162 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
           </Card>
 
           {role === "artist" && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Artist Profile</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="bio">Bio</Label>
-                  <Textarea id="bio" rows={5} value={bio} onChange={(event) => setBio(event.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="portfolioUrl">Portfolio URL</Label>
-                  <Input
-                    id="portfolioUrl"
-                    type="url"
-                    value={portfolioUrl}
-                    onChange={(event) => setPortfolioUrl(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-3">
-                  <Label>Specialties</Label>
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {categories.map((category) => (
-                      <label
-                        key={category.value}
-                        className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm"
-                      >
-                        <Checkbox
-                          checked={specialties.includes(category.value)}
-                          onCheckedChange={() => toggleSpecialty(category.value)}
-                        />
-                        {category.label}
-                      </label>
-                    ))}
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Artist Profile</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="bio">Bio</Label>
+                    <Textarea id="bio" rows={5} value={bio} onChange={(event) => setBio(event.target.value)} />
                   </div>
-                </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={isAvailable} onCheckedChange={(checked) => setIsAvailable(checked === true)} />
-                  Available for new assignments
-                </label>
-              </CardContent>
-            </Card>
+                  <div className="space-y-2">
+                    <Label htmlFor="portfolioUrl">Portfolio URL</Label>
+                    <Input
+                      id="portfolioUrl"
+                      type="url"
+                      value={portfolioUrl}
+                      onChange={(event) => setPortfolioUrl(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <Label>Specialties</Label>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {categories.map((category) => (
+                        <label
+                          key={category.value}
+                          className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm"
+                        >
+                          <Checkbox
+                            checked={specialties.includes(category.value)}
+                            onCheckedChange={() => toggleSpecialty(category.value)}
+                          />
+                          {category.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={isAvailable} onCheckedChange={(checked) => setIsAvailable(checked === true)} />
+                    Available for new assignments
+                  </label>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Portfolio Samples</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="artworkTitle">Artwork Title</Label>
+                        <Input id="artworkTitle" value={artworkTitle} onChange={(event) => setArtworkTitle(event.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="artworkDescription">Description</Label>
+                        <Textarea
+                          id="artworkDescription"
+                          rows={3}
+                          value={artworkDescription}
+                          onChange={(event) => setArtworkDescription(event.target.value)}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label>Category</Label>
+                          <Select value={artworkCategory} onValueChange={(value) => setArtworkCategory(value as GiftCategory)}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {categories.map((category) => (
+                                <SelectItem key={category.value} value={category.value}>
+                                  {category.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="artworkTags">Tags</Label>
+                          <Input
+                            id="artworkTags"
+                            placeholder="modern, wedding"
+                            value={artworkTags}
+                            onChange={(event) => setArtworkTags(event.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="artworkPriceMin">Min Price</Label>
+                          <Input
+                            id="artworkPriceMin"
+                            type="number"
+                            value={artworkPriceMin}
+                            onChange={(event) => setArtworkPriceMin(event.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="artworkPriceMax">Max Price</Label>
+                          <Input
+                            id="artworkPriceMax"
+                            type="number"
+                            value={artworkPriceMax}
+                            onChange={(event) => setArtworkPriceMax(event.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-4 text-center">
+                        <ImagePlus className="mb-2 h-6 w-6 text-muted-foreground" />
+                        <span className="text-sm font-medium">{artworkFile ? artworkFile.name : "Upload sample photo"}</span>
+                        <span className="text-xs text-muted-foreground">PNG or JPG recommended</span>
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={(event) => setArtworkFile(event.target.files?.[0] || null)}
+                        />
+                      </label>
+                      <Button type="button" onClick={handleAddArtwork} disabled={isAddingArtwork} className="w-full">
+                        {isAddingArtwork ? "Adding..." : "Add Portfolio Sample"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {artworks.length > 0 && (
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {artworks.map((artwork) => (
+                        <div key={artwork.id} className="overflow-hidden rounded-lg border">
+                          <img src={artwork.image_url} alt="" className="aspect-square w-full object-cover" />
+                          <div className="space-y-2 p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="font-medium">{artwork.title}</p>
+                                <p className="text-xs text-muted-foreground">{CATEGORY_LABELS[artwork.category]}</p>
+                              </div>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleDeleteArtwork(artwork.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
           )}
 
           <div className="flex justify-end">

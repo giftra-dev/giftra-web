@@ -158,12 +158,12 @@ function CustomerDashboardContent() {
             <CardTitle>Recent Requests</CardTitle>
             <CardDescription>Your latest gift requests and their status</CardDescription>
           </div>
-          <Link href="/customer/requests">
-            <Button variant="ghost" size="sm" className="gap-1">
+          <Button asChild variant="ghost" size="sm" className="gap-1">
+            <Link href="/customer/requests">
               View all
               <ArrowRight className="w-4 h-4" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </CardHeader>
         <CardContent>
           {requests.length === 0 ? (
@@ -217,18 +217,18 @@ function CustomerDashboardContent() {
                     </div>
                     <div className="flex items-center gap-2 ml-4">
                       {chatRoom && (
-                        <Link href={`/chat/${chatRoom.id}`}>
-                          <Button size="sm" variant="outline" className="gap-1">
+                        <Button asChild size="sm" variant="outline" className="gap-1">
+                          <Link href={`/chat/${chatRoom.id}`}>
                             <MessageSquare className="w-4 h-4" />
                             Chat
-                          </Button>
-                        </Link>
-                      )}
-                      <Link href={`/customer/request/${request.id}`}>
-                        <Button size="sm" variant="ghost">
-                          View
+                          </Link>
                         </Button>
-                      </Link>
+                      )}
+                      <Button asChild size="sm" variant="ghost">
+                        <Link href={`/customer/request/${request.id}`}>
+                          View
+                        </Link>
+                      </Button>
                     </div>
                   </div>
                 )

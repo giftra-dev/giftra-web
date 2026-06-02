@@ -46,6 +46,7 @@ import type { UserRole, Profile, Notification } from "@/lib/types/database"
 const roleNavItems: Record<UserRole, { href: string; label: string; icon: React.ElementType }[]> = {
   customer: [
     { href: "/customer/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/browse", label: "Browse Gifts", icon: Gift },
     { href: "/customer/requests", label: "My Requests", icon: Package },
     { href: "/customer/chats", label: "Messages", icon: MessageSquare },
   ],
@@ -173,9 +174,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <p className="text-muted-foreground mb-4">Please sign in to continue</p>
-          <Link href="/auth/login">
-            <Button>Sign In</Button>
-          </Link>
+          <Button asChild>
+            <Link href="/auth/login">Sign In</Link>
+          </Button>
         </div>
       </div>
     )
@@ -305,16 +306,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 Order History
               </Button>
             )}
-            <Link href={`/${currentUser.role}/settings`}>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
-              >
+            <Button
+              asChild
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+            >
+              <Link href={`/${currentUser.role}/settings`}>
                 <Settings className="w-4 h-4 mr-2" />
                 Settings
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -332,6 +334,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 overflow-auto">
         {children}
       </main>
+
+      {currentUser.role === "customer" && (
+        <OrderHistoryModal
+          open={orderHistoryOpen}
+          onOpenChange={setOrderHistoryOpen}
+          userId={currentUser.id}
+        />
+      )}
 
       <Dialog open={notificationsOpen} onOpenChange={setNotificationsOpen}>
         <DialogContent className="max-w-lg">

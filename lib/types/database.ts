@@ -73,6 +73,8 @@ export interface Request {
   id: string
   customer_id: string
   assigned_artist_id: string | null
+  preferred_artist_id: string | null
+  inspiration_artwork_id: string | null
   approved_by_admin_id: string | null
   // Details
   title: string
@@ -169,6 +171,22 @@ export interface Review {
   created_at: string
 }
 
+export interface ArtistArtwork {
+  id: string
+  artist_id: string
+  title: string
+  description: string | null
+  category: GiftCategory
+  image_url: string
+  price_min: number | null
+  price_max: number | null
+  tags: string[]
+  is_featured: boolean
+  is_public: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface Notification {
   id: string
   user_id: string
@@ -215,6 +233,10 @@ export interface OrderWithRelations extends Order {
   review?: Review
 }
 
+export interface ArtistArtworkWithArtist extends ArtistArtwork {
+  artist?: Pick<Profile, 'id' | 'avatar_url' | 'bio' | 'specialties' | 'rating' | 'total_reviews' | 'is_available'>
+}
+
 // Form types
 export interface CreateRequestInput {
   title: string
@@ -226,6 +248,8 @@ export interface CreateRequestInput {
   deadline?: string
   budget_min?: number
   budget_max?: number
+  preferred_artist_id?: string
+  inspiration_artwork_id?: string
 }
 
 export interface UpdateProfileInput {
