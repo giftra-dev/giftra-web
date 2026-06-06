@@ -2,7 +2,7 @@
 
 import { useState, Suspense } from "react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -50,7 +50,6 @@ const signupCopy: Record<Exclude<UserRole, "admin">, {
 }
 
 function SignupForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const initialRole = searchParams.get("role")
   const next = searchParams.get("next")
@@ -114,7 +113,7 @@ function SignupForm() {
 
       if (data.session) {
         // User is signed in immediately (email confirmation disabled)
-        router.push(next?.startsWith("/") && !next.startsWith("//") ? next : `/${role}/dashboard`)
+        window.location.assign(next?.startsWith("/") && !next.startsWith("//") ? next : `/${role}/dashboard`)
         return
       }
 
