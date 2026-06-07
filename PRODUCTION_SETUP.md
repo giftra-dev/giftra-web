@@ -1,135 +1,257 @@
 # Giftra Production Setup
 
-Giftra is a controlled transaction and collaboration system. The production app must enforce workflow rules in Supabase, not only in the UI.
+This project now uses `supabase/schema.sql` as the complete source of truth for the database. It recreates the app tables, storage buckets, RLS policies, realtime publication, auth profile trigger, and production workflow RPCs.
 
-## Supabase
+## 1. Back Up Before Resetting
 
-1. Create a Supabase project.
-2. Enable Email/Password auth and Google OAuth in Authentication providers.
-3. Run `supabase/schema.sql` in the SQL editor for the base schema.
-4. Run `supabase/production-workflow.sql` for the production workflow tables, RPCs, RLS policies, payments, disputes, storage buckets, and locked chat rules.
-5. Optional demo catalog: run `supabase/sample-marketplace.sql` to create 15 sample artists, 120 public artwork listings, and sample reviews for the homepage marketplace.
-6. Enable Realtime for:
-   - `giftra_chat_rooms`
-   - `giftra_messages`
-   - `giftra_orders`
-   - `gift_requests`
-7. Verify private storage buckets exist:
-   - `reference-images`
-   - `order-artwork`
-8. Create at least one admin user by signing up, then running:
+`supabase/schema.sql` is destructive.
+
+Before running it in a live Supabase project:
+
+1. Open Supabase Dashboard.
+2. Go to **Project Settings > Database > Backups**.
+3. Download a fresh backup or make sure point-in-time recovery is available.
+4. Export any data you need from `profiles`, `requests`, `orders`, `messages`, `reviews`, and `artist_artworks`.
+
+The reset deletes Giftra tables in the `public` schema. It does not delete `auth.users`, but it recreates `profiles` from existing auth users.
+
+## 2. Run The Fresh Schema
+
+1. Open **Supabase Dashboard > SQL Editor**.
+2. Paste the full contents of `supabase/schema.sql`.
+3. Run it once.
+4. Confirm these tables exist:
+   - `profiles`
+   - `artist_artworks`
+   - `requests`
+   - `chat_rooms`
+   - `messages`
+   - `orders`
+   - `reviews`
+   - `notifications`
+   - `activity_log`
+
+The schema also creates:
+
+- `artist-artworks`, `reference-images`, and `order-artwork` storage buckets.
+- RLS policies for customer, artist, and admin flows.
+- Realtime for `requests`, `chat_rooms`, `messages`, `orders`, and `notifications`.
+- RPCs for assignment, payment unlock, order status transitions, and chat messages.
+
+Do not run the old `production-workflow.sql` unless you intentionally want to maintain a separate legacy workflow. The regenerated `schema.sql` includes the current workflow support.
+
+## 3. Seed Demo Marketplace Data
+
+Optional, but useful for testing the marketplace homepage.
+
+1. Open **Supabase Dashboard > SQL Editor**.
+2. Paste the full contents of `supabase/sample-marketplace.sql`.
+3. Run it after `schema.sql`.
+
+It creates:
+
+- Admin user: `admin@giftra.co.in`
+- 20 sample artists
+- 12 sample customers
+- 150 sample artworks across all gift categories
+- 90 completed orders and reviews
+
+Demo password for seeded users:
+
+```text
+Password123!
+```
+
+Remove or replace this seed data before real launch.
+
+## 4. Admin Login
+
+If you ran the sample seed, use:
+
+```text
+Email: admin@giftra.co.in
+Password: Password123!
+```
+
+For a real production admin:
+
+1. Create the user in **Supabase Auth > Users** or through the app signup.
+2. Run this SQL with the real email:
 
 ```sql
-update public.profiles
-set role = 'admin', is_super_admin = true
-where email = 'admin@example.com';
+UPDATE public.profiles
+SET role = 'admin', is_super_admin = TRUE
+WHERE email = 'your-admin-email@example.com';
 ```
 
-## Vercel
+## 5. Environment Variables
 
-Set these environment variables:
+Set these in Vercel and in your local `.env.local`.
 
-```txt
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL=https://www.giftra.co.in/auth/callback
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://qwfzubwqitaqcvvuojyo.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+NEXT_PUBLIC_SITE_URL=https://www.giftra.co.in
+NEXT_PUBLIC_APP_URL=https://www.giftra.co.in
 ```
 
-Optional local-only demo mode:
+If you use server-only actions later, also add:
 
-```txt
-NEXT_PUBLIC_ENABLE_DEMO_AUTH=true
-NEXT_PUBLIC_ENABLE_MOCK_PAYMENTS=true
+```bash
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-Do not enable demo auth or mock payments in production.
+Never expose the service role key in client code.
 
-## Payments
+## 6. Supabase Auth URLs
 
-The UI can create unpaid orders, and local development can use `NEXT_PUBLIC_ENABLE_MOCK_PAYMENTS=true` to mark an order as paid. Production still needs a real payment provider such as Stripe or Lemon Squeezy.
+In **Supabase Dashboard > Authentication > URL Configuration**:
 
-Required production work:
+Set **Site URL**:
 
-1. Create checkout sessions from a server route or server action.
-2. Confirm payment in a provider webhook.
-3. Only after webhook confirmation, call the Supabase payment workflow/RPC or update the order with a real provider payment id.
-4. Keep `NEXT_PUBLIC_ENABLE_MOCK_PAYMENTS` unset in production.
+```text
+https://www.giftra.co.in
+```
 
-Recommended India-ready options:
+Add **Redirect URLs**:
 
-- Razorpay: useful for domestic payment methods and UPI.
-- Stripe: useful if your account/country setup supports the needed payment methods.
+```text
+https://www.giftra.co.in/auth/callback
+https://giftra.co.in/auth/callback
+http://localhost:3000/auth/callback
+```
 
-Add provider secrets only as server-side Vercel environment variables. Never expose secret keys as `NEXT_PUBLIC_*`.
+Avoid setting the Site URL to a Vercel preview domain, a bare hostname without `https://`, or the Supabase project URL.
 
-## Storage
+## 7. Google Sign-In
 
-Reference images and chat/order artwork use Supabase Storage.
+In **Google Cloud Console > APIs & Services > Credentials**:
 
-Required buckets:
+Authorized JavaScript origins:
 
-- `reference-images`
-- `order-artwork`
-- `artist-artworks` (public, so anonymous visitors can browse portfolio photos)
+```text
+https://www.giftra.co.in
+https://giftra.co.in
+http://localhost:3000
+```
 
-The production workflow SQL creates private buckets for request/order files and a public bucket for artist portfolio samples. If you make `artist-artworks` private instead, add a signing endpoint because anonymous visitors need to see marketplace images.
+Authorized redirect URIs:
 
-## Marketplace / Artist Portfolios
+```text
+https://qwfzubwqitaqcvvuojyo.supabase.co/auth/v1/callback
+```
 
-The public browse experience uses `artist_artworks` plus artist profile fields. If you already created the database before this feature existed, run the latest `supabase/schema.sql` changes manually or apply equivalent migrations:
+In **Supabase Dashboard > Authentication > Providers > Google**:
 
-- Add `preferred_artist_id` and `inspiration_artwork_id` to `requests`.
-- Create `artist_artworks`.
-- Add RLS policies that allow public reads for `is_public = true` and artist-only create/update/delete.
-- Create the public `artist-artworks` storage bucket.
+1. Enable Google.
+2. Paste the Google Client ID.
+3. Paste the Google Client Secret.
+4. Save.
 
-Artists add sample work from `/artist/settings`. Customers and anonymous visitors browse at `/browse`, favorite work locally in the browser, and start a request from a selected artwork.
+Google will still show the Supabase callback domain during the OAuth handoff because Supabase Auth is the OAuth broker. After the callback completes, users should land back on `https://www.giftra.co.in/auth/callback`, then the app redirects them by role.
 
-For local/demo catalogs, run `supabase/sample-marketplace.sql` after the schema files. The sample portfolio photos are external placeholder images; replace them with real uploads in `artist-artworks` before production use.
+## 8. Vercel Domain Setup
 
-The marketplace also includes:
+In **Vercel > Project > Settings > Domains**:
 
-- `/artwork/[id]` for public artwork detail pages.
-- `/category/[category]` for category landing pages.
-- `/wishlist` for browser-local saved artwork.
-- `/sitemap.xml` and `/robots.txt` for basic SEO discovery.
+1. Add `giftra.co.in`.
+2. Add `www.giftra.co.in`.
+3. Make `www.giftra.co.in` the primary production domain.
+4. Configure DNS at your domain provider using Vercel's instructions.
 
-Before launch, replace starter `/privacy` and `/terms` copy with counsel-approved legal text and add a real support email/contact route.
+Then redeploy after setting env vars.
 
-## Email And Notifications
+## 9. Realtime Verification
 
-Supabase Auth handles login and signup email. Production order notifications still need a transactional email provider.
+The schema attempts to add these tables to `supabase_realtime`:
 
-Recommended setup:
+- `requests`
+- `chat_rooms`
+- `messages`
+- `orders`
+- `notifications`
 
-1. Add Resend, SendGrid, Postmark, or another transactional provider.
-2. Send email on request submitted, request approved/rejected, artist assigned, payment received, preview shared, revision requested, shipped, delivered, and completed.
-3. Keep in-app notifications in the `notifications` table for dashboard visibility.
-4. Enable Realtime on `notifications`, `chat_rooms`, `messages`, `requests`, and `orders` if you want live updates.
+Verify in **Supabase Dashboard > Database > Replication** that realtime is enabled for those tables.
 
-## Monitoring And Analytics
+If messages or notifications do not update live, also confirm RLS policies allow the current user to read the row.
 
-Vercel Analytics is included. For production reliability, also add:
+## 10. Storage Verification
 
-- Error monitoring such as Sentry.
-- Payment webhook logs.
-- Admin audit log review.
-- Uptime monitoring for `https://www.giftra.co.in`.
-- Conversion events for search, wishlist, request creation, payment, and completed order.
+The schema creates these buckets:
 
-## Workflow Guarantees
+- `artist-artworks`: public read, artist-owned uploads.
+- `reference-images`: private customer request references.
+- `order-artwork`: private order delivery assets.
 
-Production mutations should call RPC-backed workflow functions:
+Recommended upload paths:
 
-- `assign_artist_and_price`
-- `record_payment_and_unlock_chat`
-- `transition_order`
-- `send_chat_message`
+```text
+artist-artworks/{artist_user_id}/filename.jpg
+reference-images/{customer_user_id}/filename.jpg
+order-artwork/{artist_or_customer_user_id}/filename.jpg
+```
 
-The frontend helper layer is in `lib/supabase/workflow.ts`.
+The storage policies depend on the first folder segment matching the authenticated user id.
 
-## Payment Provider
+## 11. Payments
 
-`record_payment_and_unlock_chat` expects a provider payment id and amount. Wire Stripe, Lemon Squeezy, or another payment provider webhook to call this only after the provider confirms payment succeeded.
+The database includes payment-ready fields and an RPC named `record_payment_and_unlock_chat`, but you still need a payment provider integration.
 
-Never unlock chat or transition an order from the client without a confirmed payment event.
+Production checklist:
+
+- Create Razorpay or Stripe account.
+- Add provider keys to Vercel as server-only env vars.
+- Create payment intent/order from a server route.
+- Verify payment with webhook signature.
+- Call `record_payment_and_unlock_chat` only after webhook verification.
+- Keep chat locked until payment is confirmed.
+
+## 12. Email And Notifications
+
+Supabase Auth handles auth emails. For marketplace emails, add a transactional provider such as Resend, Postmark, SendGrid, or Amazon SES.
+
+Recommended emails:
+
+- Request submitted.
+- Request approved or rejected.
+- Artist assigned.
+- Payment received.
+- New chat message.
+- Order shipped.
+- Order delivered.
+- Review request.
+
+## 13. Production Hardening
+
+Before launch:
+
+- Replace sample data.
+- Use real uploaded artwork images instead of remote seed URLs.
+- Add legal pages for privacy, terms, refunds, and contact.
+- Add rate limiting to request creation and chat message APIs.
+- Move sensitive workflow writes to server routes or edge functions.
+- Add Sentry or equivalent error monitoring.
+- Add analytics for marketplace search, request creation, and checkout.
+- Test customer, artist, and admin flows on desktop and mobile.
+
+## 14. Local Commands
+
+Install dependencies:
+
+```bash
+pnpm install
+```
+
+Run locally:
+
+```bash
+pnpm dev
+```
+
+Build locally:
+
+```bash
+pnpm build
+```
+
+Use Node `20.9.0` or newer for the current Next.js version.

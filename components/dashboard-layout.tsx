@@ -142,33 +142,45 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         avatar: resolvedProfile.avatar_url ?? undefined,
       })
 
-      // Load unread notifications
-      const [count, notificationData] = await Promise.all([
-        getUnreadNotificationCount(user.id),
-        getNotifications(user.id),
-      ])
-      setUnreadNotifications(count)
-      setNotifications(notificationData)
+      try {
+        const [count, notificationData] = await Promise.all([
+          getUnreadNotificationCount(user.id),
+          getNotifications(user.id),
+        ])
+        setUnreadNotifications(count)
+        setNotifications(notificationData)
 
-      // Subscribe to new notifications
-      const channel = subscribeToNotifications(user.id, (notification: Notification) => {
-        setUnreadNotifications(prev => prev + 1)
-        setNotifications(prev => [notification, ...prev])
-      })
+        const channel = subscribeToNotifications(user.id, (notification: Notification) => {
+          setUnreadNotifications(prev => prev + 1)
+          setNotifications(prev => [notification, ...prev])
+        })
 
-      return () => {
-        channel.unsubscribe()
+        return () => {
+          channel.unsubscribe()
+        }
+      } catch (notificationError) {
+        console.warn('Notifications are unavailable:', notificationError)
+        setUnreadNotifications(0)
+        setNotifications([])
       }
     } catch (error) {
       console.error('Error loading user:', error)
-      router.push('/auth/login')
+      setCurrentUser(null)
     } finally {
       setIsLoading(false)
     }
   }, [router])
 
   useEffect(() => {
-    loadUser()
+    let cleanup: void | (() => void)
+
+    loadUser().then((result) => {
+      cleanup = result
+    })
+
+    return () => {
+      cleanup?.()
+    }
   }, [loadUser])
 
   useEffect(() => {

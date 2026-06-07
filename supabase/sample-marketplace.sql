@@ -1,164 +1,226 @@
--- =====================================================
--- GIFTRA SAMPLE MARKETPLACE DATA
--- Creates anonymous sample artists, portfolio artwork, and reviews.
+-- Giftra sample marketplace data
 -- Run after supabase/schema.sql.
--- =====================================================
+-- Creates demo auth users, 20 artists, 12 customers, 150 artworks, and reviews.
+-- Demo password for seeded users: Password123!
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+BEGIN;
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+DELETE FROM auth.users
+WHERE id = '00000000-0000-0000-0000-000000000001'
+  OR email = 'admin@giftra.co.in'
+  OR email LIKE 'artist%@giftra.test'
+  OR email LIKE 'customer%@giftra.test';
 
 DO $$
 DECLARE
-  categories gift_category[] := ARRAY[
-    'portrait'::gift_category,
-    'caricature'::gift_category,
-    'illustration'::gift_category,
-    'calligraphy'::gift_category,
-    'custom_jewelry'::gift_category,
-    'woodwork'::gift_category,
-    'pottery'::gift_category,
-    'textile'::gift_category,
-    'digital_art'::gift_category,
-    'other'::gift_category
+  categories public.gift_category[] := ARRAY[
+    'portrait'::public.gift_category,
+    'caricature'::public.gift_category,
+    'illustration'::public.gift_category,
+    'calligraphy'::public.gift_category,
+    'custom_jewelry'::public.gift_category,
+    'woodwork'::public.gift_category,
+    'pottery'::public.gift_category,
+    'textile'::public.gift_category,
+    'digital_art'::public.gift_category,
+    'other'::public.gift_category
   ];
-  artist_bios text[] := ARRAY[
-    'Soft, expressive handmade work with a focus on meaningful keepsakes.',
-    'Detailed custom pieces for milestone gifts, family stories, and celebrations.',
-    'Color-rich portfolio with playful forms and polished finishing.',
-    'Minimal, elegant custom work designed for premium gifting moments.',
-    'Warm handcrafted style with careful attention to texture and personality.',
-    'Modern custom gifts with clean presentation and thoughtful symbolism.',
-    'Whimsical work for birthdays, weddings, pets, and family memories.',
-    'Traditional craft technique blended with contemporary gift design.',
-    'Highly personalized pieces made from stories, photos, and small details.',
-    'Bold decorative gifts with strong shapes, pattern, and color.',
-    'Delicate commissioned work for intimate, sentimental occasions.',
-    'Gallery-style custom pieces adapted for home display and gifting.',
-    'Playful character-driven gifts with expressive details.',
-    'Refined heirloom-style work for anniversaries and special milestones.',
-    'Experimental custom artwork with unusual materials and finishes.'
+  artist_names TEXT[] := ARRAY[
+    'Aarav Studio', 'Meera Handmade', 'Riya Portrait Co', 'Kabir Keepsakes',
+    'Anika Art House', 'Dev Woodcraft', 'Tara Threads', 'Isha Inkworks',
+    'Nikhil Clay Lab', 'Zoya Custom Gifts', 'Rohan Digital Atelier',
+    'Priya Paper Studio', 'Arjun Miniatures', 'Naina Jewelry Works',
+    'Vihaan Caricatures', 'Sara Memory Frames', 'Kian Calligraphy',
+    'Maya Giftworks', 'Reyansh Folk Art', 'Avni Color Room'
   ];
-  adjectives text[] := ARRAY[
-    'Heirloom', 'Dreamlike', 'Botanical', 'Luminous', 'Whimsical', 'Modern',
-    'Keepsake', 'Celestial', 'Storybook', 'Minimal', 'Vintage', 'Joyful'
+  city_names TEXT[] := ARRAY[
+    'Bengaluru', 'Mumbai', 'Delhi', 'Hyderabad', 'Chennai',
+    'Pune', 'Kolkata', 'Jaipur', 'Kochi', 'Ahmedabad'
   ];
-  subjects text[] := ARRAY[
-    'Family Memory', 'Wedding Moment', 'Pet Tribute', 'Birthday Surprise',
-    'Anniversary Gift', 'Home Portrait', 'Travel Memory', 'New Baby Gift',
-    'Friendship Token', 'Holiday Keepsake', 'Graduation Gift', 'Love Note'
+  sample_images TEXT[] := ARRAY[
+    'https://images.unsplash.com/photo-1452860606245-08befc0ff44b?auto=format&fit=crop&w=900&q=80',
+    'https://images.unsplash.com/photo-1513364776144-60967b0f800f?auto=format&fit=crop&w=900&q=80',
+    'https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?auto=format&fit=crop&w=900&q=80',
+    'https://images.unsplash.com/photo-1541961017774-22349e4a1262?auto=format&fit=crop&w=900&q=80',
+    'https://images.unsplash.com/photo-1529068755536-a5ade0dcb4e8?auto=format&fit=crop&w=900&q=80',
+    'https://images.unsplash.com/photo-1483058712412-4245e9b90334?auto=format&fit=crop&w=900&q=80',
+    'https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?auto=format&fit=crop&w=900&q=80',
+    'https://images.unsplash.com/photo-1493106819501-66d381c466f1?auto=format&fit=crop&w=900&q=80',
+    'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=900&q=80',
+    'https://images.unsplash.com/photo-1504198453319-5ce911bafcde?auto=format&fit=crop&w=900&q=80',
+    'https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=900&q=80',
+    'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=900&q=80'
   ];
-  review_titles text[] := ARRAY[
-    'Beautifully made', 'Exactly the right gift', 'So personal', 'Wonderful detail',
-    'Loved the final piece', 'Thoughtful and polished', 'Great experience',
-    'Exceeded expectations'
+  title_prefix TEXT[] := ARRAY[
+    'Personalized', 'Handmade', 'Custom', 'Signature', 'Premium',
+    'Anniversary', 'Birthday', 'Memory', 'Miniature', 'Festive'
   ];
-  artist_id uuid;
-  customer_id uuid;
-  request_id uuid;
-  order_id uuid;
-  artwork_id uuid;
-  category gift_category;
-  i int;
+  title_subject TEXT[] := ARRAY[
+    'Couple Portrait', 'Family Illustration', 'Pet Caricature', 'Name Plate',
+    'Keepsake Box', 'Clay Mug', 'Embroidered Hoop', 'Digital Poster',
+    'Silver Charm', 'Quote Frame', 'Wedding Gift', 'Baby Memory Art'
+  ];
+  i INTEGER;
+  rating_value INTEGER;
+  artist_id UUID;
+  customer_id UUID;
+  request_id UUID;
+  order_id UUID;
+  artwork_id UUID;
+  chosen_category public.gift_category;
+  min_price NUMERIC(10,2);
+  max_price NUMERIC(10,2);
 BEGIN
-  -- Sample customers for reviews.
-  FOR i IN 1..10 LOOP
-    customer_id := uuid_generate_v5(uuid_ns_url(), 'giftra-sample-customer-' || i);
+  -- Admin
+  INSERT INTO auth.users (
+    id,
+    instance_id,
+    aud,
+    role,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    raw_user_meta_data,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    '00000000-0000-0000-0000-000000000001',
+    '00000000-0000-0000-0000-000000000000',
+    'authenticated',
+    'authenticated',
+    'admin@giftra.co.in',
+    crypt('Password123!', gen_salt('bf')),
+    NOW(),
+    '{"role":"admin","full_name":"Giftra Admin"}'::JSONB,
+    NOW(),
+    NOW()
+  )
+  ON CONFLICT (id) DO NOTHING;
 
-    INSERT INTO auth.users (instance_id, id, aud, role, email, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES (
-      '00000000-0000-0000-0000-000000000000',
-      customer_id,
-      'authenticated',
-      'authenticated',
-      'sample.customer.' || i || '@giftra.test',
-      now(),
-      '{"provider":"email","providers":["email"]}'::jsonb,
-      jsonb_build_object('full_name', 'Sample Customer ' || i, 'role', 'customer'),
-      now(),
-      now()
-    )
-    ON CONFLICT (id) DO NOTHING;
+  INSERT INTO public.profiles (id, email, full_name, role, is_super_admin)
+  VALUES (
+    '00000000-0000-0000-0000-000000000001',
+    'admin@giftra.co.in',
+    'Giftra Admin',
+    'admin',
+    TRUE
+  )
+  ON CONFLICT (id) DO UPDATE SET role = 'admin', is_super_admin = TRUE;
 
-    INSERT INTO profiles (id, email, full_name, role, created_at, updated_at)
-    VALUES (
-      customer_id,
-      'sample.customer.' || i || '@giftra.test',
-      'Sample Customer ' || i,
-      'customer',
-      now(),
-      now()
-    )
-    ON CONFLICT (id) DO UPDATE SET updated_at = excluded.updated_at;
-  END LOOP;
+  -- Artists
+  FOR i IN 1..20 LOOP
+    artist_id := ('10000000-0000-0000-0000-' || LPAD(i::TEXT, 12, '0'))::UUID;
 
-  -- Sample anonymous artists.
-  FOR i IN 1..15 LOOP
-    artist_id := uuid_generate_v5(uuid_ns_url(), 'giftra-sample-artist-' || i);
-
-    INSERT INTO auth.users (instance_id, id, aud, role, email, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES (
-      '00000000-0000-0000-0000-000000000000',
-      artist_id,
-      'authenticated',
-      'authenticated',
-      'sample.artist.' || i || '@giftra.test',
-      now(),
-      '{"provider":"email","providers":["email"]}'::jsonb,
-      jsonb_build_object('full_name', 'Sample Artist ' || i, 'role', 'artist'),
-      now(),
-      now()
-    )
-    ON CONFLICT (id) DO NOTHING;
-
-    INSERT INTO profiles (
+    INSERT INTO auth.users (
       id,
-      email,
-      full_name,
+      instance_id,
+      aud,
       role,
-      bio,
-      avatar_url,
-      specialties,
-      rating,
-      total_reviews,
-      is_available,
+      email,
+      encrypted_password,
+      email_confirmed_at,
+      raw_user_meta_data,
       created_at,
       updated_at
     )
     VALUES (
       artist_id,
-      'sample.artist.' || i || '@giftra.test',
-      'Sample Artist ' || i,
+      '00000000-0000-0000-0000-000000000000',
+      'authenticated',
+      'authenticated',
+      'artist' || i || '@giftra.test',
+      crypt('Password123!', gen_salt('bf')),
+      NOW(),
+      jsonb_build_object('role', 'artist', 'full_name', artist_names[i]),
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO public.profiles (
+      id,
+      email,
+      full_name,
+      avatar_url,
+      role,
+      bio,
+      portfolio_url,
+      specialties,
+      is_available
+    )
+    VALUES (
+      artist_id,
+      'artist' || i || '@giftra.test',
+      artist_names[i],
+      sample_images[((i - 1) % ARRAY_LENGTH(sample_images, 1)) + 1],
       'artist',
-      artist_bios[i],
-      'https://i.pravatar.cc/240?img=' || (20 + i),
+      artist_names[i] || ' creates custom gifts from ' || city_names[((i - 1) % ARRAY_LENGTH(city_names, 1)) + 1] || ', with a focus on warm, personal details and gift-ready finishing.',
+      'https://www.giftra.co.in/artists/sample-' || i,
       ARRAY[
-        categories[((i - 1) % array_length(categories, 1)) + 1],
-        categories[((i + 2) % array_length(categories, 1)) + 1],
-        categories[((i + 5) % array_length(categories, 1)) + 1]
-      ]::gift_category[],
-      4.2 + ((i % 8)::numeric / 10),
-      12 + (i * 3),
-      true,
-      now(),
-      now()
+        categories[((i - 1) % ARRAY_LENGTH(categories, 1)) + 1],
+        categories[(i % ARRAY_LENGTH(categories, 1)) + 1],
+        categories[((i + 2) % ARRAY_LENGTH(categories, 1)) + 1]
+      ],
+      TRUE
     )
     ON CONFLICT (id) DO UPDATE SET
-      bio = excluded.bio,
-      avatar_url = excluded.avatar_url,
-      specialties = excluded.specialties,
-      rating = excluded.rating,
-      total_reviews = excluded.total_reviews,
-      is_available = excluded.is_available,
-      updated_at = now();
+      full_name = EXCLUDED.full_name,
+      bio = EXCLUDED.bio,
+      specialties = EXCLUDED.specialties,
+      is_available = TRUE;
   END LOOP;
 
-  -- 120 artwork samples across every category.
-  FOR i IN 1..120 LOOP
-    artist_id := uuid_generate_v5(uuid_ns_url(), 'giftra-sample-artist-' || (((i - 1) % 15) + 1));
-    artwork_id := uuid_generate_v5(uuid_ns_url(), 'giftra-sample-artwork-' || i);
-    category := categories[((i - 1) % array_length(categories, 1)) + 1];
+  -- Customers
+  FOR i IN 1..12 LOOP
+    customer_id := ('20000000-0000-0000-0000-' || LPAD(i::TEXT, 12, '0'))::UUID;
 
-    INSERT INTO artist_artworks (
+    INSERT INTO auth.users (
       id,
+      instance_id,
+      aud,
+      role,
+      email,
+      encrypted_password,
+      email_confirmed_at,
+      raw_user_meta_data,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      customer_id,
+      '00000000-0000-0000-0000-000000000000',
+      'authenticated',
+      'authenticated',
+      'customer' || i || '@giftra.test',
+      crypt('Password123!', gen_salt('bf')),
+      NOW(),
+      jsonb_build_object('role', 'customer', 'full_name', 'Sample Customer ' || i),
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO public.profiles (id, email, full_name, role)
+    VALUES (
+      customer_id,
+      'customer' || i || '@giftra.test',
+      'Sample Customer ' || i,
+      'customer'
+    )
+    ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name;
+  END LOOP;
+
+  -- Artwork listings
+  FOR i IN 1..150 LOOP
+    artist_id := ('10000000-0000-0000-0000-' || LPAD((((i - 1) % 20) + 1)::TEXT, 12, '0'))::UUID;
+    chosen_category := categories[((i - 1) % ARRAY_LENGTH(categories, 1)) + 1];
+    min_price := 499 + (((i - 1) % 18) * 150);
+    max_price := min_price + 700 + (((i - 1) % 5) * 350);
+
+    INSERT INTO public.artist_artworks (
       artist_id,
       title,
       description,
@@ -169,125 +231,107 @@ BEGIN
       tags,
       is_featured,
       is_public,
-      created_at,
-      updated_at
+      created_at
     )
     VALUES (
-      artwork_id,
       artist_id,
-      adjectives[((i - 1) % array_length(adjectives, 1)) + 1] || ' ' ||
-        subjects[((i - 1) % array_length(subjects, 1)) + 1],
-      'Sample custom ' || replace(category::text, '_', ' ') ||
-        ' concept for personalized gifting, shown as inspiration for a made-to-order request.',
-      category,
-      'https://picsum.photos/seed/giftra-artwork-' || i || '/900/900',
-      45 + ((i * 7) % 180),
-      95 + ((i * 11) % 340),
+      title_prefix[((i - 1) % ARRAY_LENGTH(title_prefix, 1)) + 1] || ' ' || title_subject[((i - 1) % ARRAY_LENGTH(title_subject, 1)) + 1],
+      'A custom-made ' || REPLACE(chosen_category::TEXT, '_', ' ') || ' gift with artist consultation, preview sharing, and personalized finishing.',
+      chosen_category,
+      sample_images[((i - 1) % ARRAY_LENGTH(sample_images, 1)) + 1],
+      min_price,
+      max_price,
       ARRAY[
-        replace(category::text, '_', ' '),
-        lower(adjectives[((i - 1) % array_length(adjectives, 1)) + 1]),
-        lower(replace(subjects[((i - 1) % array_length(subjects, 1)) + 1], ' ', '-'))
+        chosen_category::TEXT,
+        'custom gift',
+        'personalized',
+        city_names[((i - 1) % ARRAY_LENGTH(city_names, 1)) + 1]
       ],
-      i <= 18,
-      true,
-      now() - ((120 - i) || ' hours')::interval,
-      now()
+      i <= 24,
+      TRUE,
+      NOW() - ((i % 45) || ' days')::INTERVAL
     )
-    ON CONFLICT (id) DO UPDATE SET
-      title = excluded.title,
-      description = excluded.description,
-      category = excluded.category,
-      image_url = excluded.image_url,
-      price_min = excluded.price_min,
-      price_max = excluded.price_max,
-      tags = excluded.tags,
-      is_featured = excluded.is_featured,
-      is_public = excluded.is_public,
-      updated_at = now();
+    RETURNING id INTO artwork_id;
   END LOOP;
 
-  -- Sample completed orders and review comments so portfolio pages show feedback.
-  FOR i IN 1..75 LOOP
-    artist_id := uuid_generate_v5(uuid_ns_url(), 'giftra-sample-artist-' || (((i - 1) % 15) + 1));
-    customer_id := uuid_generate_v5(uuid_ns_url(), 'giftra-sample-customer-' || (((i - 1) % 10) + 1));
-    request_id := uuid_generate_v5(uuid_ns_url(), 'giftra-sample-request-' || i);
-    order_id := uuid_generate_v5(uuid_ns_url(), 'giftra-sample-order-' || i);
-    category := categories[((i - 1) % array_length(categories, 1)) + 1];
+  -- Completed sample orders and reviews to populate artist ratings.
+  FOR i IN 1..90 LOOP
+    customer_id := ('20000000-0000-0000-0000-' || LPAD((((i - 1) % 12) + 1)::TEXT, 12, '0'))::UUID;
+    artist_id := ('10000000-0000-0000-0000-' || LPAD((((i - 1) % 20) + 1)::TEXT, 12, '0'))::UUID;
+    chosen_category := categories[((i - 1) % ARRAY_LENGTH(categories, 1)) + 1];
+    request_id := uuid_generate_v4();
+    order_id := uuid_generate_v4();
+    rating_value := CASE
+      WHEN i % 17 = 0 THEN 3
+      WHEN i % 5 = 0 THEN 4
+      ELSE 5
+    END;
 
-    INSERT INTO requests (
+    INSERT INTO public.requests (
       id,
       customer_id,
       assigned_artist_id,
+      approved_by_admin_id,
       title,
       description,
       category,
+      occasion,
       budget_min,
       budget_max,
-      quoted_price,
       final_price,
       status,
       approved_at,
       assigned_at,
       completed_at,
-      created_at,
-      updated_at
+      created_at
     )
     VALUES (
       request_id,
       customer_id,
       artist_id,
-      'Completed sample ' || replace(category::text, '_', ' ') || ' request',
-      'Historical sample request used to display public feedback.',
-      category,
-      60,
-      320,
-      120 + ((i * 9) % 180),
-      140 + ((i * 9) % 220),
-      'completed',
-      now() - '20 days'::interval,
-      now() - '19 days'::interval,
-      now() - '5 days'::interval,
-      now() - (i || ' days')::interval,
-      now()
-    )
-    ON CONFLICT (id) DO NOTHING;
+      '00000000-0000-0000-0000-000000000001',
+      'Sample completed gift request ' || i,
+      'Seeded completed order used for marketplace ratings and review previews.',
+      chosen_category,
+      CASE WHEN i % 2 = 0 THEN 'Birthday' ELSE 'Anniversary' END,
+      800,
+      5500,
+      1299 + (i * 35),
+      'delivered',
+      NOW() - ((i + 10) || ' days')::INTERVAL,
+      NOW() - ((i + 9) || ' days')::INTERVAL,
+      NOW() - ((i % 30) || ' days')::INTERVAL,
+      NOW() - ((i + 15) || ' days')::INTERVAL
+    );
 
-    INSERT INTO orders (
+    INSERT INTO public.orders (
       id,
       request_id,
       customer_id,
       artist_id,
-      order_number,
       status,
       subtotal,
       platform_fee,
       total,
-      payment_intent_id,
       paid_at,
       delivered_at,
-      created_at,
-      updated_at
+      created_at
     )
     VALUES (
       order_id,
       request_id,
       customer_id,
       artist_id,
-      'SAMPLE-' || lpad(i::text, 4, '0'),
       'completed',
-      120 + ((i * 9) % 180),
-      round(((120 + ((i * 9) % 180))::numeric * 0.15), 2),
-      round(((120 + ((i * 9) % 180))::numeric * 1.15), 2),
-      'sample_payment_' || i,
-      now() - '18 days'::interval,
-      now() - '6 days'::interval,
-      now() - (i || ' days')::interval,
-      now()
-    )
-    ON CONFLICT (id) DO NOTHING;
+      1299 + (i * 35),
+      ROUND(((1299 + (i * 35)) * 0.10)::NUMERIC, 2),
+      ROUND(((1299 + (i * 35)) * 1.10)::NUMERIC, 2),
+      NOW() - ((i + 12) || ' days')::INTERVAL,
+      NOW() - ((i % 30) || ' days')::INTERVAL,
+      NOW() - ((i + 14) || ' days')::INTERVAL
+    );
 
-    INSERT INTO reviews (
-      id,
+    INSERT INTO public.reviews (
       order_id,
       customer_id,
       artist_id,
@@ -297,15 +341,20 @@ BEGIN
       created_at
     )
     VALUES (
-      uuid_generate_v5(uuid_ns_url(), 'giftra-sample-review-' || i),
       order_id,
       customer_id,
       artist_id,
-      4 + (i % 2),
-      review_titles[((i - 1) % array_length(review_titles, 1)) + 1],
-      'The finished custom gift felt personal, polished, and carefully made. The sample gave us a great direction for the request.',
-      now() - ((i % 30) || ' days')::interval
-    )
-    ON CONFLICT (order_id) DO NOTHING;
+      rating_value,
+      CASE
+        WHEN rating_value = 5 THEN 'Beautifully personal'
+        WHEN rating_value = 4 THEN 'Lovely gift experience'
+        ELSE 'Good work with small delays'
+      END,
+      'The artist understood the brief and created a thoughtful custom gift. The final piece felt personal and gift-ready.',
+      NOW() - ((i % 25) || ' days')::INTERVAL
+    );
   END LOOP;
-END $$;
+END;
+$$;
+
+COMMIT;

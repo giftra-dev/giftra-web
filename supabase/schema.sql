@@ -1,59 +1,54 @@
--- =====================================================
--- GIFTRA DATABASE SCHEMA
--- Complete PostgreSQL schema for Supabase
--- Run this in the Supabase SQL Editor
--- =====================================================
+-- Giftra complete database reset and production schema
+-- WARNING: Running this file deletes the Giftra application tables, policies,
+-- triggers, functions, and enums in the public schema, then recreates them.
+-- It does not delete auth.users, but profile rows are recreated from auth users.
+-- Run only after taking a backup.
 
--- Enable UUID extension
+BEGIN;
+
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- =====================================================
--- ENUM TYPES
--- =====================================================
+-- ---------------------------------------------------------------------------
+-- Reset application objects
+-- ---------------------------------------------------------------------------
 
--- User roles
-CREATE TYPE user_role AS ENUM ('customer', 'artist', 'admin');
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 
--- Request status flow
-CREATE TYPE request_status AS ENUM (
-  'pending_review',      -- Customer submitted, waiting for admin
-  'approved',            -- Admin approved, waiting for artist assignment
-  'assigned',            -- Artist assigned, work not started
-  'in_progress',         -- Artist working on it
-  'completed',           -- Artist finished, pending customer review
-  'delivered',           -- Customer accepted delivery
-  'cancelled',           -- Cancelled by any party
-  'rejected'             -- Admin rejected the request
-);
+DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
+DROP FUNCTION IF EXISTS public.set_updated_at() CASCADE;
+DROP FUNCTION IF EXISTS public.recalculate_artist_rating() CASCADE;
+DROP FUNCTION IF EXISTS public.refresh_artist_rating() CASCADE;
+DROP FUNCTION IF EXISTS public.is_admin() CASCADE;
+DROP FUNCTION IF EXISTS public.assign_artist_and_price(UUID, UUID, NUMERIC) CASCADE;
+DROP FUNCTION IF EXISTS public.assign_artist_and_price(UUID, UUID, NUMERIC, TEXT) CASCADE;
+DROP FUNCTION IF EXISTS public.record_payment_and_unlock_chat(UUID, TEXT, NUMERIC) CASCADE;
+DROP FUNCTION IF EXISTS public.transition_order(UUID, TEXT) CASCADE;
+DROP FUNCTION IF EXISTS public.send_chat_message(UUID, TEXT, TEXT, JSONB) CASCADE;
 
--- Order status (after payment)
-CREATE TYPE order_status AS ENUM (
-  'draft',               -- Order created but not ready for payment
-  'awaiting_payment',    -- Waiting for customer payment
-  'paid',                -- Payment received
-  'in_progress',         -- Artist working on the custom gift
-  'preview_shared',      -- Artist shared a preview for approval
-  'revision_requested',  -- Customer requested changes
-  'ready_to_ship',       -- Gift is complete and ready to ship
-  'shipped',             -- Item shipped
-  'delivered',           -- Item delivered to customer
-  'completed',           -- Customer accepted / order closed
-  'refunded'             -- Order refunded
-);
+DROP TABLE IF EXISTS public.activity_log CASCADE;
+DROP TABLE IF EXISTS public.notifications CASCADE;
+DROP TABLE IF EXISTS public.reviews CASCADE;
+DROP TABLE IF EXISTS public.orders CASCADE;
+DROP TABLE IF EXISTS public.messages CASCADE;
+DROP TABLE IF EXISTS public.chat_rooms CASCADE;
+DROP TABLE IF EXISTS public.requests CASCADE;
+DROP TABLE IF EXISTS public.artist_artworks CASCADE;
+DROP TABLE IF EXISTS public.profiles CASCADE;
 
--- Message types for chat
-CREATE TYPE message_type AS ENUM (
-  'text',
-  'image',
-  'file',
-  'system',              -- System notifications
-  'revision_request',    -- Customer asking for changes
-  'approval',            -- Customer approving design
-  'quote'                -- Artist sending price quote
-);
+DROP TYPE IF EXISTS public.message_type CASCADE;
+DROP TYPE IF EXISTS public.order_status CASCADE;
+DROP TYPE IF EXISTS public.request_status CASCADE;
+DROP TYPE IF EXISTS public.gift_category CASCADE;
+DROP TYPE IF EXISTS public.user_role CASCADE;
 
--- Gift categories
-CREATE TYPE gift_category AS ENUM (
+-- ---------------------------------------------------------------------------
+-- Enums
+-- ---------------------------------------------------------------------------
+
+CREATE TYPE public.user_role AS ENUM ('customer', 'artist', 'admin');
+
+CREATE TYPE public.gift_category AS ENUM (
   'portrait',
   'caricature',
   'illustration',
@@ -66,569 +61,214 @@ CREATE TYPE gift_category AS ENUM (
   'other'
 );
 
--- =====================================================
--- TABLES
--- =====================================================
+CREATE TYPE public.request_status AS ENUM (
+  'pending_review',
+  'approved',
+  'assigned',
+  'in_progress',
+  'completed',
+  'delivered',
+  'cancelled',
+  'rejected'
+);
 
--- Profiles table (extends auth.users)
-CREATE TABLE profiles (
+CREATE TYPE public.order_status AS ENUM (
+  'draft',
+  'awaiting_payment',
+  'paid',
+  'in_progress',
+  'preview_shared',
+  'revision_requested',
+  'ready_to_ship',
+  'shipped',
+  'delivered',
+  'completed',
+  'refunded'
+);
+
+CREATE TYPE public.message_type AS ENUM (
+  'text',
+  'image',
+  'file',
+  'system',
+  'revision_request',
+  'approval',
+  'quote'
+);
+
+-- ---------------------------------------------------------------------------
+-- Tables
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT NOT NULL,
   full_name TEXT,
   avatar_url TEXT,
   phone TEXT,
-  role user_role NOT NULL DEFAULT 'customer',
-  
-  -- Artist-specific fields
+  role public.user_role NOT NULL DEFAULT 'customer',
   bio TEXT,
   portfolio_url TEXT,
-  specialties gift_category[] DEFAULT '{}',
-  rating DECIMAL(3,2) DEFAULT 0,
-  total_reviews INTEGER DEFAULT 0,
-  is_available BOOLEAN DEFAULT true,
-  
-  -- Admin fields
-  is_super_admin BOOLEAN DEFAULT false,
-  
-  -- Timestamps
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  specialties public.gift_category[] NOT NULL DEFAULT '{}',
+  rating NUMERIC(3,2) NOT NULL DEFAULT 0 CHECK (rating >= 0 AND rating <= 5),
+  total_reviews INTEGER NOT NULL DEFAULT 0 CHECK (total_reviews >= 0),
+  is_available BOOLEAN NOT NULL DEFAULT TRUE,
+  is_super_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Gift Requests table
-CREATE TABLE requests (
+CREATE TABLE public.artist_artworks (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  
-  -- Relationships
-  customer_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  assigned_artist_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-  preferred_artist_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-  approved_by_admin_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-  
-  -- Request details
+  artist_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  category public.gift_category NOT NULL,
+  image_url TEXT NOT NULL,
+  price_min NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (price_min >= 0),
+  price_max NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (price_max >= price_min),
+  tags TEXT[] NOT NULL DEFAULT '{}',
+  is_featured BOOLEAN NOT NULL DEFAULT FALSE,
+  is_public BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE public.requests (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  assigned_artist_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  preferred_artist_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  inspiration_artwork_id UUID REFERENCES public.artist_artworks(id) ON DELETE SET NULL,
+  approved_by_admin_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   title TEXT NOT NULL,
   description TEXT NOT NULL,
-  category gift_category NOT NULL,
-  reference_images TEXT[] DEFAULT '{}',
-  inspiration_artwork_id UUID,
-  
-  -- Recipient info
+  category public.gift_category NOT NULL,
+  reference_images TEXT[] NOT NULL DEFAULT '{}',
   recipient_name TEXT,
   occasion TEXT,
   deadline DATE,
-  
-  -- Pricing
-  budget_min DECIMAL(10,2),
-  budget_max DECIMAL(10,2),
-  quoted_price DECIMAL(10,2),
-  final_price DECIMAL(10,2),
-  
-  -- Status tracking
-  status request_status NOT NULL DEFAULT 'pending_review',
+  budget_min NUMERIC(10,2) CHECK (budget_min IS NULL OR budget_min >= 0),
+  budget_max NUMERIC(10,2) CHECK (budget_max IS NULL OR budget_max >= COALESCE(budget_min, 0)),
+  quoted_price NUMERIC(10,2) CHECK (quoted_price IS NULL OR quoted_price >= 0),
+  final_price NUMERIC(10,2) CHECK (final_price IS NULL OR final_price >= 0),
+  status public.request_status NOT NULL DEFAULT 'pending_review',
   admin_notes TEXT,
   rejection_reason TEXT,
-  
-  -- Timestamps
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   approved_at TIMESTAMPTZ,
   assigned_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ
 );
 
--- Public artist portfolio / marketplace artworks
-CREATE TABLE artist_artworks (
+CREATE TABLE public.chat_rooms (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  artist_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT,
-  category gift_category NOT NULL,
-  image_url TEXT NOT NULL,
-  price_min DECIMAL(10,2),
-  price_max DECIMAL(10,2),
-  tags TEXT[] DEFAULT '{}',
-  is_featured BOOLEAN DEFAULT false,
-  is_public BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  request_id UUID NOT NULL UNIQUE REFERENCES public.requests(id) ON DELETE CASCADE,
+  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  artist_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  admin_can_view BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_message_at TIMESTAMPTZ
 );
 
-ALTER TABLE requests
-  ADD CONSTRAINT requests_inspiration_artwork_id_fkey
-  FOREIGN KEY (inspiration_artwork_id) REFERENCES artist_artworks(id) ON DELETE SET NULL;
-
--- Chat Rooms table
-CREATE TABLE chat_rooms (
+CREATE TABLE public.messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  request_id UUID NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
-  
-  -- Participants (stored for quick access)
-  customer_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  artist_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-  
-  -- Room settings
-  is_active BOOLEAN DEFAULT true,
-  admin_can_view BOOLEAN DEFAULT true,
-  
-  -- Timestamps
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  last_message_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Chat Messages table
-CREATE TABLE messages (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  chat_room_id UUID NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
-  sender_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  
-  -- Message content
-  message_type message_type NOT NULL DEFAULT 'text',
+  chat_room_id UUID NOT NULL REFERENCES public.chat_rooms(id) ON DELETE CASCADE,
+  sender_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  message_type public.message_type NOT NULL DEFAULT 'text',
   content TEXT NOT NULL,
-  attachments TEXT[] DEFAULT '{}',
-  
-  -- For quotes
-  quote_amount DECIMAL(10,2),
-  quote_details TEXT,
-  
-  -- Read status
-  is_read BOOLEAN DEFAULT false,
+  attachments TEXT[] NOT NULL DEFAULT '{}',
+  quote_amount NUMERIC(10,2) CHECK (quote_amount IS NULL OR quote_amount >= 0),
+  quote_details JSONB NOT NULL DEFAULT '{}'::JSONB,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
   read_at TIMESTAMPTZ,
-  
-  -- Timestamps
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Orders table (after payment)
-CREATE TABLE orders (
+CREATE TABLE public.orders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  request_id UUID NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
-  
-  -- Relationships
-  customer_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  artist_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  
-  -- Order details
-  order_number TEXT NOT NULL UNIQUE,
-  status order_status NOT NULL DEFAULT 'awaiting_payment',
-  
-  -- Pricing
-  subtotal DECIMAL(10,2) NOT NULL,
-  platform_fee DECIMAL(10,2) NOT NULL,
-  total DECIMAL(10,2) NOT NULL,
-  
-  -- Payment info
+  request_id UUID NOT NULL UNIQUE REFERENCES public.requests(id) ON DELETE CASCADE,
+  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  artist_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  order_number TEXT NOT NULL UNIQUE DEFAULT ('GFT-' || UPPER(SUBSTRING(REPLACE(uuid_generate_v4()::TEXT, '-', ''), 1, 10))),
+  status public.order_status NOT NULL DEFAULT 'draft',
+  subtotal NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (subtotal >= 0),
+  platform_fee NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (platform_fee >= 0),
+  total NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (total >= 0),
   payment_intent_id TEXT,
   paid_at TIMESTAMPTZ,
-  
-  -- Shipping info
-  shipping_address JSONB,
+  shipping_address JSONB NOT NULL DEFAULT '{}'::JSONB,
   tracking_number TEXT,
   shipped_at TIMESTAMPTZ,
   delivered_at TIMESTAMPTZ,
-  
-  -- Timestamps
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Reviews table
-CREATE TABLE reviews (
+CREATE TABLE public.reviews (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  customer_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  artist_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  
-  -- Review content
+  order_id UUID NOT NULL UNIQUE REFERENCES public.orders(id) ON DELETE CASCADE,
+  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  artist_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
   title TEXT,
   content TEXT,
-  
-  -- Response from artist
   artist_response TEXT,
   artist_responded_at TIMESTAMPTZ,
-  
-  -- Timestamps
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  
-  -- Ensure one review per order
-  UNIQUE(order_id)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Notifications table
-CREATE TABLE notifications (
+CREATE TABLE public.notifications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  
-  -- Notification content
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   message TEXT NOT NULL,
   link TEXT,
-  
-  -- Status
-  is_read BOOLEAN DEFAULT false,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
   read_at TIMESTAMPTZ,
-  
-  -- Timestamps
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Activity Log (for admin tracking)
-CREATE TABLE activity_log (
+CREATE TABLE public.activity_log (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-  
-  -- Activity details
+  user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   action TEXT NOT NULL,
   entity_type TEXT NOT NULL,
   entity_id UUID,
-  details JSONB DEFAULT '{}',
-  
-  -- Timestamps
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  details JSONB NOT NULL DEFAULT '{}'::JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- =====================================================
--- INDEXES
--- =====================================================
+-- ---------------------------------------------------------------------------
+-- Indexes
+-- ---------------------------------------------------------------------------
 
--- Profiles indexes
-CREATE INDEX idx_profiles_role ON profiles(role);
-CREATE INDEX idx_profiles_email ON profiles(email);
+CREATE INDEX profiles_role_idx ON public.profiles(role);
+CREATE INDEX profiles_artist_available_idx ON public.profiles(role, is_available) WHERE role = 'artist';
+CREATE INDEX artist_artworks_artist_idx ON public.artist_artworks(artist_id);
+CREATE INDEX artist_artworks_category_idx ON public.artist_artworks(category);
+CREATE INDEX artist_artworks_public_featured_idx ON public.artist_artworks(is_public, is_featured);
+CREATE INDEX requests_customer_idx ON public.requests(customer_id);
+CREATE INDEX requests_artist_idx ON public.requests(assigned_artist_id);
+CREATE INDEX requests_status_idx ON public.requests(status);
+CREATE INDEX chat_rooms_customer_idx ON public.chat_rooms(customer_id);
+CREATE INDEX chat_rooms_artist_idx ON public.chat_rooms(artist_id);
+CREATE INDEX messages_room_created_idx ON public.messages(chat_room_id, created_at DESC);
+CREATE INDEX orders_customer_idx ON public.orders(customer_id);
+CREATE INDEX orders_artist_idx ON public.orders(artist_id);
+CREATE INDEX orders_status_idx ON public.orders(status);
+CREATE INDEX reviews_artist_idx ON public.reviews(artist_id);
+CREATE INDEX notifications_user_unread_idx ON public.notifications(user_id, is_read, created_at DESC);
+CREATE INDEX activity_log_created_idx ON public.activity_log(created_at DESC);
 
--- Requests indexes
-CREATE INDEX idx_requests_customer ON requests(customer_id);
-CREATE INDEX idx_requests_artist ON requests(assigned_artist_id);
-CREATE INDEX idx_requests_preferred_artist ON requests(preferred_artist_id);
-CREATE INDEX idx_requests_inspiration_artwork ON requests(inspiration_artwork_id);
-CREATE INDEX idx_requests_status ON requests(status);
-CREATE INDEX idx_requests_category ON requests(category);
-CREATE INDEX idx_requests_created ON requests(created_at DESC);
+-- ---------------------------------------------------------------------------
+-- Utility functions and triggers
+-- ---------------------------------------------------------------------------
 
--- Chat rooms indexes
-CREATE INDEX idx_chat_rooms_request ON chat_rooms(request_id);
-CREATE INDEX idx_chat_rooms_customer ON chat_rooms(customer_id);
-CREATE INDEX idx_chat_rooms_artist ON chat_rooms(artist_id);
-
--- Messages indexes
-CREATE INDEX idx_messages_chat_room ON messages(chat_room_id);
-CREATE INDEX idx_messages_sender ON messages(sender_id);
-CREATE INDEX idx_messages_created ON messages(created_at DESC);
-
--- Artist artworks indexes
-CREATE INDEX idx_artist_artworks_artist ON artist_artworks(artist_id);
-CREATE INDEX idx_artist_artworks_category ON artist_artworks(category);
-CREATE INDEX idx_artist_artworks_public ON artist_artworks(is_public);
-CREATE INDEX idx_artist_artworks_created ON artist_artworks(created_at DESC);
-
--- Orders indexes
-CREATE INDEX idx_orders_customer ON orders(customer_id);
-CREATE INDEX idx_orders_artist ON orders(artist_id);
-CREATE INDEX idx_orders_status ON orders(status);
-CREATE INDEX idx_orders_number ON orders(order_number);
-
--- Notifications indexes
-CREATE INDEX idx_notifications_user ON notifications(user_id);
-CREATE INDEX idx_notifications_unread ON notifications(user_id, is_read) WHERE is_read = false;
-
--- =====================================================
--- ROW LEVEL SECURITY (RLS)
--- =====================================================
-
--- Enable RLS on all tables
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE chat_rooms ENABLE ROW LEVEL SECURITY;
-ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
-ALTER TABLE artist_artworks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
-
--- =====================================================
--- PROFILES POLICIES
--- =====================================================
-
--- Users can view their own profile
-CREATE POLICY "Users can view own profile"
-  ON profiles FOR SELECT
-  USING (auth.uid() = id);
-
--- Users can view other profiles (for artist listing, etc.)
-CREATE POLICY "Users can view public profile info"
-  ON profiles FOR SELECT
-  USING (true);
-
--- Users can update their own profile
-CREATE POLICY "Users can update own profile"
-  ON profiles FOR UPDATE
-  USING (auth.uid() = id);
-
--- Users can insert their own profile
-CREATE POLICY "Users can insert own profile"
-  ON profiles FOR INSERT
-  WITH CHECK (auth.uid() = id);
-
--- =====================================================
--- REQUESTS POLICIES
--- =====================================================
-
--- Customers can view their own requests
-CREATE POLICY "Customers can view own requests"
-  ON requests FOR SELECT
-  USING (auth.uid() = customer_id);
-
--- Artists can view assigned requests
-CREATE POLICY "Artists can view assigned requests"
-  ON requests FOR SELECT
-  USING (auth.uid() = assigned_artist_id);
-
--- Admins can view all requests
-CREATE POLICY "Admins can view all requests"
-  ON requests FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-      AND profiles.role = 'admin'
-    )
-  );
-
--- Customers can create requests
-CREATE POLICY "Customers can create requests"
-  ON requests FOR INSERT
-  WITH CHECK (auth.uid() = customer_id);
-
--- Customers can update their pending requests
-CREATE POLICY "Customers can update pending requests"
-  ON requests FOR UPDATE
-  USING (
-    auth.uid() = customer_id
-    AND status IN ('pending_review', 'approved')
-  );
-
--- Artists can update their assigned requests
-CREATE POLICY "Artists can update assigned requests"
-  ON requests FOR UPDATE
-  USING (
-    auth.uid() = assigned_artist_id
-    AND status IN ('assigned', 'in_progress')
-  );
-
--- Admins can update any request
-CREATE POLICY "Admins can update requests"
-  ON requests FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-      AND profiles.role = 'admin'
-    )
-  );
-
--- =====================================================
--- CHAT ROOMS POLICIES
--- =====================================================
-
--- Participants can view their chat rooms
-CREATE POLICY "Participants can view chat rooms"
-  ON chat_rooms FOR SELECT
-  USING (
-    auth.uid() = customer_id
-    OR auth.uid() = artist_id
-    OR EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-      AND profiles.role = 'admin'
-    )
-  );
-
--- System can create chat rooms (via function)
-CREATE POLICY "System can create chat rooms"
-  ON chat_rooms FOR INSERT
-  WITH CHECK (auth.uid() = customer_id);
-
--- =====================================================
--- MESSAGES POLICIES
--- =====================================================
-
--- Participants can view messages in their chat rooms
-CREATE POLICY "Participants can view messages"
-  ON messages FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM chat_rooms
-      WHERE chat_rooms.id = messages.chat_room_id
-      AND (
-        chat_rooms.customer_id = auth.uid()
-        OR chat_rooms.artist_id = auth.uid()
-        OR EXISTS (
-          SELECT 1 FROM profiles
-          WHERE profiles.id = auth.uid()
-          AND profiles.role = 'admin'
-        )
-      )
-    )
-  );
-
--- Participants can send messages
-CREATE POLICY "Participants can send messages"
-  ON messages FOR INSERT
-  WITH CHECK (
-    auth.uid() = sender_id
-    AND EXISTS (
-      SELECT 1 FROM chat_rooms
-      WHERE chat_rooms.id = messages.chat_room_id
-      AND (
-        chat_rooms.customer_id = auth.uid()
-        OR chat_rooms.artist_id = auth.uid()
-      )
-    )
-  );
-
--- =====================================================
--- ORDERS POLICIES
--- =====================================================
-
--- Customers can view their orders
-CREATE POLICY "Customers can view own orders"
-  ON orders FOR SELECT
-  USING (auth.uid() = customer_id);
-
--- Artists can view their orders
-CREATE POLICY "Artists can view own orders"
-  ON orders FOR SELECT
-  USING (auth.uid() = artist_id);
-
--- Admins can view all orders
-CREATE POLICY "Admins can view all orders"
-  ON orders FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-      AND profiles.role = 'admin'
-    )
-  );
-
--- =====================================================
--- REVIEWS POLICIES
--- =====================================================
-
--- Anyone can view reviews
-CREATE POLICY "Anyone can view reviews"
-  ON reviews FOR SELECT
-  USING (true);
-
--- Customers can create reviews for their orders
-CREATE POLICY "Customers can create reviews"
-  ON reviews FOR INSERT
-  WITH CHECK (
-    auth.uid() = customer_id
-    AND EXISTS (
-      SELECT 1 FROM orders
-      WHERE orders.id = reviews.order_id
-      AND orders.customer_id = auth.uid()
-      AND orders.status = 'delivered'
-    )
-  );
-
--- Artists can respond to reviews
-CREATE POLICY "Artists can respond to reviews"
-  ON reviews FOR UPDATE
-  USING (auth.uid() = artist_id);
-
--- =====================================================
--- ARTIST ARTWORKS POLICIES
--- =====================================================
-
--- Anyone can browse public artworks
-CREATE POLICY "Anyone can view public artist artworks"
-  ON artist_artworks FOR SELECT
-  USING (is_public = true);
-
--- Artists can view all of their own artworks
-CREATE POLICY "Artists can view own artworks"
-  ON artist_artworks FOR SELECT
-  USING (auth.uid() = artist_id);
-
--- Artists can create portfolio artworks
-CREATE POLICY "Artists can create own artworks"
-  ON artist_artworks FOR INSERT
-  WITH CHECK (auth.uid() = artist_id);
-
--- Artists can update their portfolio artworks
-CREATE POLICY "Artists can update own artworks"
-  ON artist_artworks FOR UPDATE
-  USING (auth.uid() = artist_id);
-
--- Artists can delete their portfolio artworks
-CREATE POLICY "Artists can delete own artworks"
-  ON artist_artworks FOR DELETE
-  USING (auth.uid() = artist_id);
-
--- =====================================================
--- NOTIFICATIONS POLICIES
--- =====================================================
-
--- Users can view their own notifications
-CREATE POLICY "Users can view own notifications"
-  ON notifications FOR SELECT
-  USING (auth.uid() = user_id);
-
--- Users can update their own notifications (mark as read)
-CREATE POLICY "Users can update own notifications"
-  ON notifications FOR UPDATE
-  USING (auth.uid() = user_id);
-
--- =====================================================
--- ACTIVITY LOG POLICIES
--- =====================================================
-
--- Only admins can view activity log
-CREATE POLICY "Admins can view activity log"
-  ON activity_log FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-      AND profiles.role = 'admin'
-    )
-  );
-
--- =====================================================
--- FUNCTIONS & TRIGGERS
--- =====================================================
-
--- Auto-create profile on user signup
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  INSERT INTO public.profiles (id, email, full_name, role)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    COALESCE(NEW.raw_user_meta_data ->> 'full_name', NULL),
-    COALESCE((NEW.raw_user_meta_data ->> 'role')::user_role, 'customer')
-  )
-  ON CONFLICT (id) DO NOTHING;
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_new_user();
-
--- Update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_updated_at()
+CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
@@ -638,132 +278,700 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER update_profiles_updated_at
-  BEFORE UPDATE ON profiles
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER set_profiles_updated_at
+BEFORE UPDATE ON public.profiles
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER update_requests_updated_at
-  BEFORE UPDATE ON requests
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER set_artist_artworks_updated_at
+BEFORE UPDATE ON public.artist_artworks
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER update_messages_updated_at
-  BEFORE UPDATE ON messages
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER set_requests_updated_at
+BEFORE UPDATE ON public.requests
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER update_orders_updated_at
-  BEFORE UPDATE ON orders
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER set_messages_updated_at
+BEFORE UPDATE ON public.messages
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
--- Auto-create chat room when request is approved and artist assigned
-CREATE OR REPLACE FUNCTION create_chat_room_on_assignment()
+CREATE TRIGGER set_orders_updated_at
+BEFORE UPDATE ON public.orders
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-AS $$
-BEGIN
-  -- Only create chat room when artist is first assigned
-  IF NEW.assigned_artist_id IS NOT NULL 
-     AND OLD.assigned_artist_id IS NULL 
-     AND NEW.status IN ('assigned', 'in_progress') THEN
-    INSERT INTO chat_rooms (request_id, customer_id, artist_id)
-    VALUES (NEW.id, NEW.customer_id, NEW.assigned_artist_id)
-    ON CONFLICT DO NOTHING;
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER on_request_artist_assigned
-  AFTER UPDATE ON requests
-  FOR EACH ROW
-  EXECUTE FUNCTION create_chat_room_on_assignment();
-
--- Update artist rating when new review is added
-CREATE OR REPLACE FUNCTION update_artist_rating()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
-  avg_rating DECIMAL(3,2);
-  review_count INTEGER;
+  requested_role TEXT;
 BEGIN
-  SELECT AVG(rating), COUNT(*)
-  INTO avg_rating, review_count
-  FROM reviews
-  WHERE artist_id = NEW.artist_id;
-  
-  UPDATE profiles
-  SET rating = COALESCE(avg_rating, 0),
-      total_reviews = review_count
-  WHERE id = NEW.artist_id;
-  
+  requested_role := COALESCE(NEW.raw_user_meta_data->>'role', 'customer');
+
+  IF requested_role NOT IN ('customer', 'artist', 'admin') THEN
+    requested_role := 'customer';
+  END IF;
+
+  INSERT INTO public.profiles (id, email, full_name, avatar_url, role)
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.email, ''),
+    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name'),
+    NEW.raw_user_meta_data->>'avatar_url',
+    requested_role::public.user_role
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = COALESCE(public.profiles.full_name, EXCLUDED.full_name),
+    avatar_url = COALESCE(public.profiles.avatar_url, EXCLUDED.avatar_url),
+    updated_at = NOW();
+
   RETURN NEW;
 END;
 $$;
 
-CREATE TRIGGER on_review_created
-  AFTER INSERT ON reviews
-  FOR EACH ROW
-  EXECUTE FUNCTION update_artist_rating();
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- Generate order number
-CREATE OR REPLACE FUNCTION generate_order_number()
-RETURNS TRIGGER
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.profiles
+    WHERE id = auth.uid()
+      AND role = 'admin'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.refresh_artist_rating(p_artist_id UUID)
+RETURNS VOID
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
-  NEW.order_number = 'GFT-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || 
-                     LPAD(FLOOR(RANDOM() * 10000)::TEXT, 4, '0');
+  UPDATE public.profiles
+  SET
+    rating = COALESCE((
+      SELECT ROUND(AVG(rating)::NUMERIC, 2)
+      FROM public.reviews
+      WHERE artist_id = p_artist_id
+    ), 0),
+    total_reviews = (
+      SELECT COUNT(*)::INTEGER
+      FROM public.reviews
+      WHERE artist_id = p_artist_id
+    ),
+    updated_at = NOW()
+  WHERE id = p_artist_id
+    AND role = 'artist';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.recalculate_artist_rating()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    PERFORM public.refresh_artist_rating(OLD.artist_id);
+    RETURN OLD;
+  END IF;
+
+  PERFORM public.refresh_artist_rating(NEW.artist_id);
+
+  IF TG_OP = 'UPDATE' AND OLD.artist_id <> NEW.artist_id THEN
+    PERFORM public.refresh_artist_rating(OLD.artist_id);
+  END IF;
+
   RETURN NEW;
 END;
 $$;
 
-CREATE TRIGGER on_order_created
-  BEFORE INSERT ON orders
-  FOR EACH ROW
-  EXECUTE FUNCTION generate_order_number();
+CREATE TRIGGER reviews_refresh_artist_rating
+AFTER INSERT OR UPDATE OR DELETE ON public.reviews
+FOR EACH ROW EXECUTE FUNCTION public.recalculate_artist_rating();
 
--- Update chat room last_message_at
-CREATE OR REPLACE FUNCTION update_chat_room_last_message()
+CREATE OR REPLACE FUNCTION public.touch_chat_room_last_message()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
-  UPDATE chat_rooms
-  SET last_message_at = NOW()
+  UPDATE public.chat_rooms
+  SET last_message_at = NEW.created_at
   WHERE id = NEW.chat_room_id;
+
   RETURN NEW;
 END;
 $$;
 
-CREATE TRIGGER on_message_created
-  AFTER INSERT ON messages
-  FOR EACH ROW
-  EXECUTE FUNCTION update_chat_room_last_message();
+CREATE TRIGGER messages_touch_chat_room
+AFTER INSERT ON public.messages
+FOR EACH ROW EXECUTE FUNCTION public.touch_chat_room_last_message();
 
--- =====================================================
--- SAMPLE DATA (Optional - for testing)
--- =====================================================
+-- ---------------------------------------------------------------------------
+-- Production workflow RPCs used by the app/server helpers
+-- ---------------------------------------------------------------------------
 
--- Uncomment the following to insert sample data after creating a user via the app
+CREATE OR REPLACE FUNCTION public.assign_artist_and_price(
+  p_gift_request_id UUID,
+  p_artist_id UUID,
+  p_final_price NUMERIC,
+  p_admin_notes TEXT DEFAULT NULL
+)
+RETURNS public.orders
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_request public.requests;
+  v_order public.orders;
+  v_room public.chat_rooms;
+  v_platform_fee NUMERIC(10,2);
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Only admins can assign artists';
+  END IF;
 
-/*
--- Insert sample artists (after they sign up via the app)
-UPDATE profiles SET
-  role = 'artist',
-  bio = 'Professional portrait artist with 10 years of experience.',
-  specialties = ARRAY['portrait', 'illustration']::gift_category[],
-  is_available = true
-WHERE email = 'artist@example.com';
+  SELECT * INTO v_request
+  FROM public.requests
+  WHERE id = p_gift_request_id
+  FOR UPDATE;
 
--- Insert sample admin
-UPDATE profiles SET
-  role = 'admin',
-  is_super_admin = true
-WHERE email = 'admin@example.com';
-*/
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Request not found';
+  END IF;
+
+  v_platform_fee := ROUND((p_final_price * 0.10)::NUMERIC, 2);
+
+  UPDATE public.requests
+  SET
+    assigned_artist_id = p_artist_id,
+    approved_by_admin_id = auth.uid(),
+    final_price = p_final_price,
+    quoted_price = p_final_price,
+    admin_notes = COALESCE(p_admin_notes, admin_notes),
+    status = 'assigned',
+    approved_at = COALESCE(approved_at, NOW()),
+    assigned_at = NOW()
+  WHERE id = p_gift_request_id;
+
+  INSERT INTO public.chat_rooms (request_id, customer_id, artist_id, is_active)
+  VALUES (p_gift_request_id, v_request.customer_id, p_artist_id, FALSE)
+  ON CONFLICT (request_id) DO UPDATE SET
+    artist_id = EXCLUDED.artist_id,
+    is_active = FALSE
+  RETURNING * INTO v_room;
+
+  INSERT INTO public.orders (
+    request_id,
+    customer_id,
+    artist_id,
+    status,
+    subtotal,
+    platform_fee,
+    total
+  )
+  VALUES (
+    p_gift_request_id,
+    v_request.customer_id,
+    p_artist_id,
+    'awaiting_payment',
+    p_final_price,
+    v_platform_fee,
+    p_final_price + v_platform_fee
+  )
+  ON CONFLICT (request_id) DO UPDATE SET
+    artist_id = EXCLUDED.artist_id,
+    status = 'awaiting_payment',
+    subtotal = EXCLUDED.subtotal,
+    platform_fee = EXCLUDED.platform_fee,
+    total = EXCLUDED.total,
+    updated_at = NOW()
+  RETURNING * INTO v_order;
+
+  INSERT INTO public.notifications (user_id, title, message, link)
+  VALUES
+    (v_request.customer_id, 'Your custom gift quote is ready', 'Review the quote and complete payment to unlock chat.', '/customer/requests/' || p_gift_request_id),
+    (p_artist_id, 'A new order was assigned to you', 'The customer can chat after payment is completed.', '/artist/orders');
+
+  RETURN v_order;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.record_payment_and_unlock_chat(
+  p_order_id UUID,
+  p_provider_payment_id TEXT,
+  p_amount NUMERIC
+)
+RETURNS public.orders
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_order public.orders;
+BEGIN
+  SELECT * INTO v_order
+  FROM public.orders
+  WHERE id = p_order_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Order not found';
+  END IF;
+
+  IF auth.uid() <> v_order.customer_id AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Not allowed to record this payment';
+  END IF;
+
+  IF p_amount < v_order.total THEN
+    RAISE EXCEPTION 'Payment amount is lower than order total';
+  END IF;
+
+  UPDATE public.orders
+  SET
+    status = 'paid',
+    payment_intent_id = p_provider_payment_id,
+    paid_at = NOW()
+  WHERE id = p_order_id
+  RETURNING * INTO v_order;
+
+  UPDATE public.requests
+  SET status = 'in_progress'
+  WHERE id = v_order.request_id;
+
+  UPDATE public.chat_rooms
+  SET is_active = TRUE
+  WHERE request_id = v_order.request_id;
+
+  INSERT INTO public.notifications (user_id, title, message, link)
+  VALUES
+    (v_order.artist_id, 'Payment received', 'Chat is now open for this order.', '/artist/orders'),
+    (v_order.customer_id, 'Payment confirmed', 'You can now chat with the artist.', '/messages');
+
+  RETURN v_order;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.transition_order(
+  p_order_id UUID,
+  p_to_status TEXT
+)
+RETURNS public.orders
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_order public.orders;
+  v_status public.order_status;
+BEGIN
+  v_status := p_to_status::public.order_status;
+
+  SELECT * INTO v_order
+  FROM public.orders
+  WHERE id = p_order_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Order not found';
+  END IF;
+
+  IF auth.uid() NOT IN (v_order.customer_id, v_order.artist_id) AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Not allowed to update this order';
+  END IF;
+
+  UPDATE public.orders
+  SET
+    status = v_status,
+    shipped_at = CASE WHEN v_status = 'shipped' THEN COALESCE(shipped_at, NOW()) ELSE shipped_at END,
+    delivered_at = CASE WHEN v_status IN ('delivered', 'completed') THEN COALESCE(delivered_at, NOW()) ELSE delivered_at END
+  WHERE id = p_order_id
+  RETURNING * INTO v_order;
+
+  IF v_status IN ('delivered', 'completed') THEN
+    UPDATE public.requests
+    SET status = 'delivered', completed_at = COALESCE(completed_at, NOW())
+    WHERE id = v_order.request_id;
+  END IF;
+
+  RETURN v_order;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.send_chat_message(
+  p_chat_room_id UUID,
+  p_content TEXT,
+  p_message_type TEXT DEFAULT 'text',
+  p_attachments JSONB DEFAULT '[]'::JSONB
+)
+RETURNS public.messages
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_room public.chat_rooms;
+  v_message public.messages;
+  v_attachments TEXT[];
+BEGIN
+  SELECT * INTO v_room
+  FROM public.chat_rooms
+  WHERE id = p_chat_room_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Chat room not found';
+  END IF;
+
+  IF NOT v_room.is_active AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Chat is locked until payment is completed';
+  END IF;
+
+  IF auth.uid() NOT IN (v_room.customer_id, v_room.artist_id) AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Not allowed to message in this room';
+  END IF;
+
+  SELECT COALESCE(array_agg(value::TEXT), '{}')
+  INTO v_attachments
+  FROM jsonb_array_elements_text(p_attachments);
+
+  INSERT INTO public.messages (chat_room_id, sender_id, message_type, content, attachments)
+  VALUES (p_chat_room_id, auth.uid(), p_message_type::public.message_type, p_content, v_attachments)
+  RETURNING * INTO v_message;
+
+  RETURN v_message;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Row level security
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.artist_artworks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chat_rooms ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.activity_log ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Profiles are readable for marketplace"
+ON public.profiles FOR SELECT
+USING (TRUE);
+
+CREATE POLICY "Users can insert own profile"
+ON public.profiles FOR INSERT
+WITH CHECK (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile"
+ON public.profiles FOR UPDATE
+USING (auth.uid() = id OR public.is_admin())
+WITH CHECK (auth.uid() = id OR public.is_admin());
+
+CREATE POLICY "Public artworks are readable"
+ON public.artist_artworks FOR SELECT
+USING (is_public = TRUE OR auth.uid() = artist_id OR public.is_admin());
+
+CREATE POLICY "Artists manage own artworks"
+ON public.artist_artworks FOR ALL
+USING (auth.uid() = artist_id OR public.is_admin())
+WITH CHECK (auth.uid() = artist_id OR public.is_admin());
+
+CREATE POLICY "Request participants can read"
+ON public.requests FOR SELECT
+USING (
+  auth.uid() = customer_id
+  OR auth.uid() = assigned_artist_id
+  OR auth.uid() = preferred_artist_id
+  OR public.is_admin()
+);
+
+CREATE POLICY "Customers create requests"
+ON public.requests FOR INSERT
+WITH CHECK (auth.uid() = customer_id);
+
+CREATE POLICY "Request participants can update"
+ON public.requests FOR UPDATE
+USING (
+  auth.uid() = customer_id
+  OR auth.uid() = assigned_artist_id
+  OR public.is_admin()
+)
+WITH CHECK (
+  auth.uid() = customer_id
+  OR auth.uid() = assigned_artist_id
+  OR public.is_admin()
+);
+
+CREATE POLICY "Chat participants can read rooms"
+ON public.chat_rooms FOR SELECT
+USING (
+  auth.uid() = customer_id
+  OR auth.uid() = artist_id
+  OR (admin_can_view = TRUE AND public.is_admin())
+);
+
+CREATE POLICY "Participants and admins create rooms"
+ON public.chat_rooms FOR INSERT
+WITH CHECK (
+  auth.uid() = customer_id
+  OR auth.uid() = artist_id
+  OR public.is_admin()
+);
+
+CREATE POLICY "Participants and admins update rooms"
+ON public.chat_rooms FOR UPDATE
+USING (
+  auth.uid() = customer_id
+  OR auth.uid() = artist_id
+  OR public.is_admin()
+)
+WITH CHECK (
+  auth.uid() = customer_id
+  OR auth.uid() = artist_id
+  OR public.is_admin()
+);
+
+CREATE POLICY "Chat participants can read messages"
+ON public.messages FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.chat_rooms cr
+    WHERE cr.id = chat_room_id
+      AND (
+        auth.uid() = cr.customer_id
+        OR auth.uid() = cr.artist_id
+        OR (cr.admin_can_view = TRUE AND public.is_admin())
+      )
+  )
+);
+
+CREATE POLICY "Chat participants can send messages"
+ON public.messages FOR INSERT
+WITH CHECK (
+  auth.uid() = sender_id
+  AND EXISTS (
+    SELECT 1
+    FROM public.chat_rooms cr
+    WHERE cr.id = chat_room_id
+      AND (auth.uid() = cr.customer_id OR auth.uid() = cr.artist_id OR public.is_admin())
+  )
+);
+
+CREATE POLICY "Chat participants can update message read state"
+ON public.messages FOR UPDATE
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.chat_rooms cr
+    WHERE cr.id = chat_room_id
+      AND (auth.uid() = cr.customer_id OR auth.uid() = cr.artist_id OR public.is_admin())
+  )
+);
+
+CREATE POLICY "Order participants can read"
+ON public.orders FOR SELECT
+USING (
+  auth.uid() = customer_id
+  OR auth.uid() = artist_id
+  OR public.is_admin()
+);
+
+CREATE POLICY "Customers and admins create orders"
+ON public.orders FOR INSERT
+WITH CHECK (
+  auth.uid() = customer_id
+  OR public.is_admin()
+);
+
+CREATE POLICY "Order participants can update"
+ON public.orders FOR UPDATE
+USING (
+  auth.uid() = customer_id
+  OR auth.uid() = artist_id
+  OR public.is_admin()
+)
+WITH CHECK (
+  auth.uid() = customer_id
+  OR auth.uid() = artist_id
+  OR public.is_admin()
+);
+
+CREATE POLICY "Reviews are public"
+ON public.reviews FOR SELECT
+USING (TRUE);
+
+CREATE POLICY "Customers review own orders"
+ON public.reviews FOR INSERT
+WITH CHECK (
+  auth.uid() = customer_id
+  AND EXISTS (
+    SELECT 1
+    FROM public.orders o
+    WHERE o.id = order_id
+      AND o.customer_id = auth.uid()
+      AND o.artist_id = artist_id
+      AND o.status IN ('delivered', 'completed')
+  )
+);
+
+CREATE POLICY "Customers update own reviews"
+ON public.reviews FOR UPDATE
+USING (auth.uid() = customer_id OR auth.uid() = artist_id OR public.is_admin())
+WITH CHECK (auth.uid() = customer_id OR auth.uid() = artist_id OR public.is_admin());
+
+CREATE POLICY "Users read own notifications"
+ON public.notifications FOR SELECT
+USING (auth.uid() = user_id OR public.is_admin());
+
+CREATE POLICY "Authenticated users can create notifications"
+ON public.notifications FOR INSERT
+WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "Users update own notifications"
+ON public.notifications FOR UPDATE
+USING (auth.uid() = user_id OR public.is_admin())
+WITH CHECK (auth.uid() = user_id OR public.is_admin());
+
+CREATE POLICY "Admins read activity log"
+ON public.activity_log FOR SELECT
+USING (public.is_admin());
+
+CREATE POLICY "Admins write activity log"
+ON public.activity_log FOR INSERT
+WITH CHECK (public.is_admin());
+
+-- ---------------------------------------------------------------------------
+-- Storage buckets and policies
+-- ---------------------------------------------------------------------------
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES
+  ('artist-artworks', 'artist-artworks', TRUE),
+  ('reference-images', 'reference-images', FALSE),
+  ('order-artwork', 'order-artwork', FALSE)
+ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
+
+DROP POLICY IF EXISTS "Public can view artist artworks" ON storage.objects;
+DROP POLICY IF EXISTS "Artists upload own artworks" ON storage.objects;
+DROP POLICY IF EXISTS "Artists update own artworks" ON storage.objects;
+DROP POLICY IF EXISTS "Artists delete own artworks" ON storage.objects;
+DROP POLICY IF EXISTS "Users manage own reference images" ON storage.objects;
+DROP POLICY IF EXISTS "Users read own reference images" ON storage.objects;
+DROP POLICY IF EXISTS "Users manage own order artwork" ON storage.objects;
+DROP POLICY IF EXISTS "Users read own order artwork" ON storage.objects;
+
+CREATE POLICY "Public can view artist artworks"
+ON storage.objects FOR SELECT
+USING (bucket_id = 'artist-artworks');
+
+CREATE POLICY "Artists upload own artworks"
+ON storage.objects FOR INSERT
+WITH CHECK (
+  bucket_id = 'artist-artworks'
+  AND auth.uid()::TEXT = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Artists update own artworks"
+ON storage.objects FOR UPDATE
+USING (
+  bucket_id = 'artist-artworks'
+  AND auth.uid()::TEXT = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Artists delete own artworks"
+ON storage.objects FOR DELETE
+USING (
+  bucket_id = 'artist-artworks'
+  AND auth.uid()::TEXT = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Users manage own reference images"
+ON storage.objects FOR INSERT
+WITH CHECK (
+  bucket_id = 'reference-images'
+  AND auth.uid()::TEXT = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Users read own reference images"
+ON storage.objects FOR SELECT
+USING (
+  bucket_id = 'reference-images'
+  AND (auth.uid()::TEXT = (storage.foldername(name))[1] OR public.is_admin())
+);
+
+CREATE POLICY "Users manage own order artwork"
+ON storage.objects FOR INSERT
+WITH CHECK (
+  bucket_id = 'order-artwork'
+  AND auth.uid()::TEXT = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Users read own order artwork"
+ON storage.objects FOR SELECT
+USING (
+  bucket_id = 'order-artwork'
+  AND (auth.uid()::TEXT = (storage.foldername(name))[1] OR public.is_admin())
+);
+
+-- ---------------------------------------------------------------------------
+-- Realtime publication
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  table_name TEXT;
+BEGIN
+  FOREACH table_name IN ARRAY ARRAY[
+    'requests',
+    'chat_rooms',
+    'messages',
+    'orders',
+    'notifications'
+  ]
+  LOOP
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime'
+        AND schemaname = 'public'
+        AND tablename = table_name
+    ) THEN
+      EXECUTE FORMAT('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', table_name);
+    END IF;
+  END LOOP;
+END;
+$$;
+
+-- Recreate profiles for existing auth users after the reset.
+INSERT INTO public.profiles (id, email, full_name, avatar_url, role)
+SELECT
+  u.id,
+  COALESCE(u.email, ''),
+  COALESCE(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name'),
+  u.raw_user_meta_data->>'avatar_url',
+  CASE
+    WHEN u.raw_user_meta_data->>'role' IN ('customer', 'artist', 'admin')
+      THEN (u.raw_user_meta_data->>'role')::public.user_role
+    ELSE 'customer'::public.user_role
+  END
+FROM auth.users u
+ON CONFLICT (id) DO NOTHING;
+
+COMMIT;

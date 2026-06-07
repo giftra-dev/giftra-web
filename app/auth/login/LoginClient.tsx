@@ -62,7 +62,11 @@ export default function LoginClient() {
     setError("")
 
     try {
-      const { error: googleError } = await signInWithGoogle()
+      const redirect = searchParams.get("redirect")
+      const { error: googleError } = await signInWithGoogle(
+        undefined,
+        redirect?.startsWith("/") && !redirect.startsWith("//") ? redirect : undefined
+      )
       if (googleError) {
         setError(googleError.message)
         setIsGoogleLoading(false)

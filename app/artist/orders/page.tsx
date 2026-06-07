@@ -29,8 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { createClient } from "@/lib/supabase/client"
-import { getArtistOrders, updateOrderStatus, getChatRoomByRequestId } from "@/lib/supabase/queries"
+import { getArtistOrders, updateOrderStatus, getChatRoomByRequestId, getCurrentUser } from "@/lib/supabase/queries"
 import type { OrderStatus } from "@/lib/types/database"
 
 const orderStatusColors: Record<OrderStatus, string> = {
@@ -95,14 +94,12 @@ function ArtistOrdersContent() {
   const [trackingNumber, setTrackingNumber] = useState("")
   const [updating, setUpdating] = useState(false)
   
-  const supabase = createClient()
-
   useEffect(() => {
     loadOrders()
   }, [])
 
   async function loadOrders() {
-    const { data: { user } } = await supabase.auth.getUser()
+    const { user } = await getCurrentUser()
     if (!user) {
       setLoading(false)
       return
