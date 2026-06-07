@@ -253,6 +253,9 @@ export function LandingPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<UserRole>("customer")
   const [isLoading, setIsLoading] = useState(true)
+  const [heroCarouselApi, setHeroCarouselApi] = useState<{
+    scrollNext: () => void
+  } | null>(null)
 
   useEffect(() => {
     async function loadArtworks() {
@@ -286,6 +289,16 @@ export function LandingPage() {
     loadArtworks()
     setFavorites(JSON.parse(localStorage.getItem(favoriteStorageKey) || "[]"))
   }, [])
+
+  useEffect(() => {
+    if (!heroCarouselApi) return
+
+    const interval = window.setInterval(() => {
+      heroCarouselApi.scrollNext()
+    }, 4500)
+
+    return () => window.clearInterval(interval)
+  }, [heroCarouselApi])
 
   const categoryCounts = useMemo(() => {
     return artworks.reduce<Record<string, number>>((counts, artwork) => {
@@ -514,7 +527,7 @@ export function LandingPage() {
       <main>
         <section className="border-b bg-background">
           <div className="container mx-auto grid gap-5 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <Carousel opts={{ align: "start", loop: true }} className="min-w-0">
+            <Carousel opts={{ align: "start", loop: true }} setApi={(api) => setHeroCarouselApi(api || null)} className="min-w-0">
               <CarouselContent>
                 {explainerSlides.map((slide, index) => {
                   const artwork = featured[index % Math.max(featured.length, 1)]
@@ -700,14 +713,14 @@ export function LandingPage() {
                 ))}
               </div>
             </div>
-            <div className="rounded-lg border bg-primary p-5 text-primary-foreground">
+            <div className="rounded-lg border bg-secondary p-5 text-secondary-foreground">
               <p className="text-sm font-semibold">By artist</p>
               <div className="mt-4 grid gap-2">
                 {artistOptions.slice(0, 4).map((option) => (
                   <button
                     key={option.id}
                     type="button"
-                    className="rounded-md bg-background/15 px-3 py-2 text-left text-sm hover:bg-background/25"
+                    className="rounded-md bg-background/75 px-3 py-2 text-left text-sm text-foreground hover:bg-background"
                     onClick={() => {
                       setArtist(option.id)
                       document.getElementById("artworks")?.scrollIntoView({ behavior: "smooth" })
