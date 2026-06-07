@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -26,7 +26,6 @@ const isRoleRoute = (path: string, role: UserRole) =>
   path === `/${role}` || path.startsWith(`/${role}/`)
 
 export default function LoginClient() {
-  const router = useRouter()
   const searchParams = useSearchParams()
 
   const [showPassword, setShowPassword] = useState(false)
@@ -114,7 +113,7 @@ export default function LoginClient() {
           ? metadataRole
           : "customer"
 
-      router.push(getRedirectPath(role))
+      window.location.assign(getRedirectPath(role))
     } catch {
       setError("Unable to sign in. Please try again.")
       setIsLoading(false)
