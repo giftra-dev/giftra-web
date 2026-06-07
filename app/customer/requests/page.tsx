@@ -23,8 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { createClient } from "@/lib/supabase/client"
-import { getCustomerRequests, getChatRoomByRequestId } from "@/lib/supabase/queries"
+import { getCustomerRequests, getChatRoomByRequestId, getCurrentUser } from "@/lib/supabase/queries"
 import type { RequestStatus } from "@/lib/types/database"
 
 const statusColors: Record<RequestStatus, string> = {
@@ -71,11 +70,9 @@ function CustomerRequestsContent() {
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
   
-  const supabase = createClient()
-
   useEffect(() => {
     async function loadData() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { user } = await getCurrentUser()
       if (!user) {
         setLoading(false)
         return

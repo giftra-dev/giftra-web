@@ -120,12 +120,25 @@ export async function signOut() {
 export async function getCurrentUser() {
   const supabase = createClient()
   const { data: { user }, error } = await supabase.auth.getUser()
-  return { user, error }
+
+  if (user) {
+    return { user, error }
+  }
+
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession()
+
+  return {
+    user: session?.user ?? null,
+    error: error ?? sessionError,
+  }
 }
 
 export async function getCurrentProfile(): Promise<Profile | null> {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { user } = await getCurrentUser()
   
   if (!user) return null
   
@@ -254,7 +267,7 @@ export async function createRequest(
   input: CreateRequestInput
 ): Promise<{ data: Request | null; error: Error | null }> {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { user } = await getCurrentUser()
   
   if (!user) {
     return { data: null, error: new Error('Not authenticated') }
@@ -382,7 +395,7 @@ export async function assignArtist(
   quotedPrice: number
 ): Promise<{ data: Request | null; error: Error | null; chatRoom?: ChatRoom }> {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { user } = await getCurrentUser()
   
   if (!user) {
     return { data: null, error: new Error('Not authenticated') }
@@ -986,7 +999,7 @@ export async function sendMessage(
   input: SendMessageInput
 ): Promise<{ data: Message | null; error: Error | null }> {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { user } = await getCurrentUser()
   
   if (!user) {
     return { data: null, error: new Error('Not authenticated') }
@@ -1052,7 +1065,7 @@ export async function createReview(
   content?: string
 ): Promise<{ data: Review | null; error: Error | null }> {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { user } = await getCurrentUser()
   
   if (!user) {
     return { data: null, error: new Error('Not authenticated') }
