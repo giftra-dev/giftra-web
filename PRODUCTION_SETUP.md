@@ -28,6 +28,9 @@ The reset deletes Giftra tables in the `public` schema. It does not delete `auth
    - `messages`
    - `orders`
    - `reviews`
+   - `wishlist_items`
+   - `reports`
+   - `payment_events`
    - `notifications`
    - `activity_log`
 
@@ -37,6 +40,7 @@ The schema also creates:
 - RLS policies for customer, artist, and admin flows.
 - Realtime for `requests`, `chat_rooms`, `messages`, `orders`, and `notifications`.
 - RPCs for assignment, payment unlock, order status transitions, and chat messages.
+- Persistent wishlist, listing reports, and payment event records.
 
 Do not run the old `production-workflow.sql` unless you intentionally want to maintain a separate legacy workflow. The regenerated `schema.sql` includes the current workflow support.
 
@@ -61,6 +65,8 @@ Demo password for seeded users:
 ```text
 Password123!
 ```
+
+If seeded demo users return a Supabase Auth `grant_type=password` 500, rerun the latest `sample-marketplace.sql`. Demo users need matching rows in both `auth.users` and `auth.identities`.
 
 Remove or replace this seed data before real launch.
 
@@ -99,6 +105,13 @@ If you use server-only actions later, also add:
 
 ```bash
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+```
+
+Payment/webhook routes also expect:
+
+```bash
+PAYMENT_PROVIDER=razorpay_or_stripe
+PAYMENT_WEBHOOK_SECRET=your-webhook-secret
 ```
 
 Never expose the service role key in client code.
@@ -201,10 +214,14 @@ Production checklist:
 
 - Create Razorpay or Stripe account.
 - Add provider keys to Vercel as server-only env vars.
-- Create payment intent/order from a server route.
+- Connect provider-specific payment intent/order creation in `app/api/payments/create-intent/route.ts`.
 - Verify payment with webhook signature.
+- Point the provider webhook to `https://www.giftra.co.in/api/payments/webhook`.
+- Send or verify `PAYMENT_WEBHOOK_SECRET`; replace the placeholder secret check with the provider's official signature verification before launch.
 - Call `record_payment_and_unlock_chat` only after webhook verification.
 - Keep chat locked until payment is confirmed.
+
+The webhook route records rows in `payment_events` and unlocks chat for successful payment statuses after setup.
 
 ## 12. Email And Notifications
 

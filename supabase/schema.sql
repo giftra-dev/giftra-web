@@ -28,6 +28,9 @@ DROP FUNCTION IF EXISTS public.send_chat_message(UUID, TEXT, TEXT, JSONB) CASCAD
 
 DROP TABLE IF EXISTS public.activity_log CASCADE;
 DROP TABLE IF EXISTS public.notifications CASCADE;
+DROP TABLE IF EXISTS public.payment_events CASCADE;
+DROP TABLE IF EXISTS public.reports CASCADE;
+DROP TABLE IF EXISTS public.wishlist_items CASCADE;
 DROP TABLE IF EXISTS public.reviews CASCADE;
 DROP TABLE IF EXISTS public.orders CASCADE;
 DROP TABLE IF EXISTS public.messages CASCADE;
@@ -221,6 +224,44 @@ CREATE TABLE public.reviews (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE public.wishlist_items (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  artwork_id UUID NOT NULL REFERENCES public.artist_artworks(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, artwork_id)
+);
+
+CREATE TABLE public.reports (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  reporter_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  artwork_id UUID REFERENCES public.artist_artworks(id) ON DELETE CASCADE,
+  artist_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  reason TEXT NOT NULL,
+  details TEXT,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'reviewing', 'resolved', 'dismissed')),
+  admin_notes TEXT,
+  resolved_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  resolved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE public.payment_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  order_id UUID REFERENCES public.orders(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL DEFAULT 'manual',
+  provider_event_id TEXT,
+  provider_payment_id TEXT,
+  amount NUMERIC(10,2) CHECK (amount IS NULL OR amount >= 0),
+  currency TEXT NOT NULL DEFAULT 'INR',
+  status TEXT NOT NULL,
+  raw_payload JSONB NOT NULL DEFAULT '{}'::JSONB,
+  processed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (provider, provider_event_id)
+);
+
 CREATE TABLE public.notifications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -261,6 +302,11 @@ CREATE INDEX orders_customer_idx ON public.orders(customer_id);
 CREATE INDEX orders_artist_idx ON public.orders(artist_id);
 CREATE INDEX orders_status_idx ON public.orders(status);
 CREATE INDEX reviews_artist_idx ON public.reviews(artist_id);
+CREATE INDEX wishlist_items_user_idx ON public.wishlist_items(user_id, created_at DESC);
+CREATE INDEX wishlist_items_artwork_idx ON public.wishlist_items(artwork_id);
+CREATE INDEX reports_status_idx ON public.reports(status, created_at DESC);
+CREATE INDEX reports_artwork_idx ON public.reports(artwork_id);
+CREATE INDEX payment_events_order_idx ON public.payment_events(order_id, created_at DESC);
 CREATE INDEX notifications_user_unread_idx ON public.notifications(user_id, is_read, created_at DESC);
 CREATE INDEX activity_log_created_idx ON public.activity_log(created_at DESC);
 
@@ -296,6 +342,10 @@ FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 CREATE TRIGGER set_orders_updated_at
 BEFORE UPDATE ON public.orders
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER set_reports_updated_at
+BEFORE UPDATE ON public.reports
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -533,7 +583,7 @@ BEGIN
     RAISE EXCEPTION 'Order not found';
   END IF;
 
-  IF auth.uid() <> v_order.customer_id AND NOT public.is_admin() THEN
+  IF auth.uid() <> v_order.customer_id AND NOT public.is_admin() AND auth.role() <> 'service_role' THEN
     RAISE EXCEPTION 'Not allowed to record this payment';
   END IF;
 
@@ -667,6 +717,9 @@ ALTER TABLE public.chat_rooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wishlist_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payment_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_log ENABLE ROW LEVEL SECURITY;
 
@@ -836,6 +889,40 @@ ON public.reviews FOR UPDATE
 USING (auth.uid() = customer_id OR auth.uid() = artist_id OR public.is_admin())
 WITH CHECK (auth.uid() = customer_id OR auth.uid() = artist_id OR public.is_admin());
 
+CREATE POLICY "Users manage own wishlist"
+ON public.wishlist_items FOR ALL
+USING (auth.uid() = user_id OR public.is_admin())
+WITH CHECK (auth.uid() = user_id OR public.is_admin());
+
+CREATE POLICY "Reporters and admins read reports"
+ON public.reports FOR SELECT
+USING (auth.uid() = reporter_id OR public.is_admin());
+
+CREATE POLICY "Authenticated users create reports"
+ON public.reports FOR INSERT
+WITH CHECK (auth.role() = 'authenticated' AND auth.uid() = reporter_id);
+
+CREATE POLICY "Admins update reports"
+ON public.reports FOR UPDATE
+USING (public.is_admin())
+WITH CHECK (public.is_admin());
+
+CREATE POLICY "Order participants read payment events"
+ON public.payment_events FOR SELECT
+USING (
+  public.is_admin()
+  OR EXISTS (
+    SELECT 1
+    FROM public.orders o
+    WHERE o.id = order_id
+      AND (auth.uid() = o.customer_id OR auth.uid() = o.artist_id)
+  )
+);
+
+CREATE POLICY "Admins insert payment events"
+ON public.payment_events FOR INSERT
+WITH CHECK (public.is_admin());
+
 CREATE POLICY "Users read own notifications"
 ON public.notifications FOR SELECT
 USING (auth.uid() = user_id OR public.is_admin());
@@ -943,6 +1030,8 @@ BEGIN
     'chat_rooms',
     'messages',
     'orders',
+    'reports',
+    'payment_events',
     'notifications'
   ]
   LOOP

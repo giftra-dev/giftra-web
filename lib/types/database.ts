@@ -171,6 +171,44 @@ export interface Review {
   created_at: string
 }
 
+export interface WishlistItem {
+  id: string
+  user_id: string
+  artwork_id: string
+  created_at: string
+}
+
+export type ReportStatus = 'open' | 'reviewing' | 'resolved' | 'dismissed'
+
+export interface Report {
+  id: string
+  reporter_id: string | null
+  artwork_id: string | null
+  artist_id: string | null
+  reason: string
+  details: string | null
+  status: ReportStatus
+  admin_notes: string | null
+  resolved_by: string | null
+  resolved_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PaymentEvent {
+  id: string
+  order_id: string | null
+  provider: string
+  provider_event_id: string | null
+  provider_payment_id: string | null
+  amount: number | null
+  currency: string
+  status: string
+  raw_payload: Record<string, unknown>
+  processed_at: string | null
+  created_at: string
+}
+
 export interface ArtistArtwork {
   id: string
   artist_id: string

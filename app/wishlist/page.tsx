@@ -7,7 +7,13 @@ import { MarketplaceHeader } from "@/components/marketplace/marketplace-header"
 import { readWishlist, writeWishlist } from "@/components/marketplace/utils"
 import { CreateRequestDialog } from "@/components/create-request-dialog"
 import { Button } from "@/components/ui/button"
-import { getCurrentUser, getPublicArtworks } from "@/lib/supabase/queries"
+import {
+  getCurrentUser,
+  getPublicArtworks,
+  getWishlistArtworkIds,
+  syncWishlistItems,
+  toggleWishlistItem,
+} from "@/lib/supabase/queries"
 import type { ArtistArtworkWithArtist, GiftCategory } from "@/lib/types/database"
 import { Heart } from "lucide-react"
 
@@ -15,17 +21,29 @@ export default function WishlistPage() {
   const [artworks, setArtworks] = useState<ArtistArtworkWithArtist[]>([])
   const [favorites, setFavorites] = useState<string[]>([])
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
   const [selectedArtwork, setSelectedArtwork] = useState<ArtistArtworkWithArtist | null>(null)
   const [requestOpen, setRequestOpen] = useState(false)
 
   useEffect(() => {
     async function loadWishlist() {
-      const wishlist = readWishlist()
-      setFavorites(wishlist)
+      const localWishlist = readWishlist()
+      setFavorites(localWishlist)
       const [items, userData] = await Promise.all([
         getPublicArtworks(),
         getCurrentUser().catch(() => ({ user: null })),
       ])
+
+      if (userData.user) {
+        if (localWishlist.length > 0) {
+          await syncWishlistItems(userData.user.id, localWishlist)
+        }
+        const dbWishlist = await getWishlistArtworkIds(userData.user.id)
+        setFavorites(dbWishlist)
+        writeWishlist(dbWishlist)
+        setUserId(userData.user.id)
+      }
+
       setArtworks(items)
       setIsLoggedIn(Boolean(userData.user))
     }
@@ -37,7 +55,9 @@ export default function WishlistPage() {
     return artworks.filter((artwork) => favorites.includes(artwork.id))
   }, [artworks, favorites])
 
-  const toggleFavorite = (artworkId: string) => {
+  const toggleFavorite = async (artworkId: string) => {
+    const shouldSave = !favorites.includes(artworkId)
+
     setFavorites((current) => {
       const next = current.includes(artworkId)
         ? current.filter((id) => id !== artworkId)
@@ -45,6 +65,10 @@ export default function WishlistPage() {
       writeWishlist(next)
       return next
     })
+
+    if (userId) {
+      await toggleWishlistItem(userId, artworkId, shouldSave)
+    }
   }
 
   return (
@@ -58,7 +82,9 @@ export default function WishlistPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold">Wishlist</h1>
-              <p className="text-sm text-muted-foreground">Saved custom gift ideas live in this browser.</p>
+              <p className="text-sm text-muted-foreground">
+                {isLoggedIn ? "Saved custom gift ideas are synced to your Giftra account." : "Saved custom gift ideas live in this browser until you sign in."}
+              </p>
             </div>
           </div>
         </section>

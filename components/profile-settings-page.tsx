@@ -247,6 +247,27 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
             <>
               <Card>
                 <CardHeader>
+                  <CardTitle>Marketplace Readiness</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    { label: "Profile name", done: Boolean(fullName || profile?.full_name) },
+                    { label: "Artist bio", done: bio.trim().length >= 20 },
+                    { label: "Specialties", done: specialties.length > 0 },
+                    { label: "Portfolio samples", done: artworks.length > 0 },
+                  ].map((item) => (
+                    <div key={item.label} className="flex items-center gap-3 rounded-lg border p-3 text-sm">
+                      <span className={item.done ? "flex h-6 w-6 items-center justify-center rounded-full bg-success text-success-foreground" : "h-6 w-6 rounded-full border"} >
+                        {item.done ? <Check className="h-4 w-4" /> : null}
+                      </span>
+                      <span className={item.done ? "font-medium" : "text-muted-foreground"}>{item.label}</span>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
                   <CardTitle>Artist Profile</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">

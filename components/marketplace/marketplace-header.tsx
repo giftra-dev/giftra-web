@@ -1,10 +1,30 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { getCurrentProfile, getCurrentUser } from "@/lib/supabase/queries"
+import type { UserRole } from "@/lib/types/database"
 import { Gift, Heart, Store, UserRound } from "lucide-react"
 
 export function MarketplaceHeader({ wishlistCount = 0 }: { wishlistCount?: number }) {
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [role, setRole] = useState<UserRole>("customer")
+
+  useEffect(() => {
+    async function loadUser() {
+      const [userData, profile] = await Promise.all([
+        getCurrentUser().catch(() => ({ user: null })),
+        getCurrentProfile().catch(() => null),
+      ])
+
+      setIsLoggedIn(Boolean(userData.user))
+      setRole(profile?.role || "customer")
+    }
+
+    loadUser()
+  }, [])
+
   return (
     <header className="sticky top-0 z-50 border-b bg-card shadow-sm">
       <div className="container mx-auto flex h-16 items-center justify-between gap-3 px-4">
@@ -15,18 +35,34 @@ export function MarketplaceHeader({ wishlistCount = 0 }: { wishlistCount?: numbe
           <span className="text-xl font-bold">Giftra</span>
         </Link>
         <nav className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/auth/signup?role=artist">
-              <Store className="mr-2 h-4 w-4" />
-              Sell
-            </Link>
-          </Button>
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/auth/login">
-              <UserRound className="mr-2 h-4 w-4" />
-              Sign In
-            </Link>
-          </Button>
+          {isLoggedIn ? (
+            <>
+              <Button asChild variant="ghost" size="sm">
+                <Link href={`/${role}/settings`}>
+                  <UserRound className="mr-2 h-4 w-4" />
+                  Profile
+                </Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link href={`/${role}/dashboard`}>Dashboard</Link>
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/auth/signup?role=artist">
+                  <Store className="mr-2 h-4 w-4" />
+                  Sell
+                </Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/auth/login">
+                  <UserRound className="mr-2 h-4 w-4" />
+                  Sign In
+                </Link>
+              </Button>
+            </>
+          )}
           <Button asChild variant="outline" size="sm">
             <Link href="/wishlist">
               <Heart className="mr-2 h-4 w-4" />

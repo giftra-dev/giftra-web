@@ -26,7 +26,8 @@ import {
   Settings,
   Users,
   History,
-  UserCheck
+  UserCheck,
+  Flag
 } from "lucide-react"
 import { OrderHistoryModal } from "@/components/order-history-modal"
 import { cn } from "@/lib/utils"
@@ -61,6 +62,7 @@ const roleNavItems: Record<UserRole, { href: string; label: string; icon: React.
     { href: "/admin/orders", label: "Orders", icon: Package },
     { href: "/admin/users", label: "Users", icon: Users },
     { href: "/admin/artists", label: "Artists", icon: UserCheck },
+    { href: "/admin/reports", label: "Reports", icon: Flag },
     { href: "/admin/chats", label: "Chat Monitor", icon: MessageSquare },
   ],
 }

@@ -7,6 +7,8 @@ import type {
   Order,
   Notification,
   Review,
+  WishlistItem,
+  Report,
   CreateRequestInput,
   UpdateProfileInput,
   SendMessageInput,
@@ -779,6 +781,137 @@ export async function getPublicArtworkById(artworkId: string): Promise<ArtistArt
     .maybeSingle()
 
   return data as ArtistArtworkWithArtist | null
+}
+
+export async function getWishlistArtworkIds(userId: string): Promise<string[]> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('wishlist_items')
+    .select('artwork_id')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+
+  return (data || []).map((item) => item.artwork_id)
+}
+
+export async function syncWishlistItems(
+  userId: string,
+  artworkIds: string[]
+): Promise<{ data: WishlistItem[]; error: Error | null }> {
+  const supabase = createClient()
+  const uniqueIds = Array.from(new Set(artworkIds)).filter(Boolean)
+
+  if (uniqueIds.length === 0) {
+    return { data: [], error: null }
+  }
+
+  const { data, error } = await supabase
+    .from('wishlist_items')
+    .upsert(
+      uniqueIds.map((artworkId) => ({ user_id: userId, artwork_id: artworkId })),
+      { onConflict: 'user_id,artwork_id' }
+    )
+    .select()
+
+  return { data: (data || []) as WishlistItem[], error: error as Error | null }
+}
+
+export async function toggleWishlistItem(
+  userId: string,
+  artworkId: string,
+  shouldSave: boolean
+): Promise<{ error: Error | null }> {
+  const supabase = createClient()
+
+  if (shouldSave) {
+    const { error } = await supabase
+      .from('wishlist_items')
+      .upsert({ user_id: userId, artwork_id: artworkId }, { onConflict: 'user_id,artwork_id' })
+
+    return { error: error as Error | null }
+  }
+
+  const { error } = await supabase
+    .from('wishlist_items')
+    .delete()
+    .eq('user_id', userId)
+    .eq('artwork_id', artworkId)
+
+  return { error: error as Error | null }
+}
+
+export async function submitArtworkReport(input: {
+  artwork_id: string
+  artist_id: string
+  reason: string
+  details?: string
+}): Promise<{ data: Report | null; error: Error | null }> {
+  const supabase = createClient()
+  const { user } = await getCurrentUser()
+
+  if (!user) {
+    return { data: null, error: new Error('Not authenticated') }
+  }
+
+  const { data, error } = await supabase
+    .from('reports')
+    .insert({
+      reporter_id: user.id,
+      artwork_id: input.artwork_id,
+      artist_id: input.artist_id,
+      reason: input.reason,
+      details: input.details,
+    })
+    .select()
+    .single()
+
+  return { data: data as Report | null, error: error as Error | null }
+}
+
+export async function getAllReports(): Promise<Array<Report & {
+  artwork?: Pick<ArtistArtwork, 'id' | 'title' | 'image_url' | 'category'>
+  reporter?: Pick<Profile, 'id' | 'email' | 'full_name'>
+  artist?: Pick<Profile, 'id' | 'email' | 'full_name'>
+}>> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('reports')
+    .select(`
+      *,
+      artwork:artist_artworks(id, title, image_url, category),
+      reporter:profiles!reports_reporter_id_fkey(id, email, full_name),
+      artist:profiles!reports_artist_id_fkey(id, email, full_name)
+    `)
+    .order('created_at', { ascending: false })
+
+  return (data || []) as Array<Report & {
+    artwork?: Pick<ArtistArtwork, 'id' | 'title' | 'image_url' | 'category'>
+    reporter?: Pick<Profile, 'id' | 'email' | 'full_name'>
+    artist?: Pick<Profile, 'id' | 'email' | 'full_name'>
+  }>
+}
+
+export async function updateReportStatus(
+  reportId: string,
+  status: Report['status'],
+  adminNotes?: string
+): Promise<{ data: Report | null; error: Error | null }> {
+  const supabase = createClient()
+  const { user } = await getCurrentUser()
+
+  const { data, error } = await supabase
+    .from('reports')
+    .update({
+      status,
+      admin_notes: adminNotes,
+      resolved_by: status === 'resolved' || status === 'dismissed' ? user?.id : undefined,
+      resolved_at: status === 'resolved' || status === 'dismissed' ? new Date().toISOString() : undefined,
+    })
+    .eq('id', reportId)
+    .select()
+    .single()
+
+  return { data: data as Report | null, error: error as Error | null }
 }
 
 export async function getArtistPortfolio(

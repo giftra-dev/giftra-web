@@ -21,16 +21,22 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { CreateRequestDialog } from "@/components/create-request-dialog"
-import { getCurrentUser, getPublicArtworks } from "@/lib/supabase/queries"
-import type { ArtistArtworkWithArtist, GiftCategory } from "@/lib/types/database"
+import {
+  getCurrentProfile,
+  getCurrentUser,
+  getPublicArtworks,
+  getWishlistArtworkIds,
+  syncWishlistItems,
+  toggleWishlistItem,
+} from "@/lib/supabase/queries"
+import type { ArtistArtworkWithArtist, GiftCategory, UserRole } from "@/lib/types/database"
 import { CATEGORY_LABELS } from "@/lib/types/database"
 import {
-  ArrowRight,
   BadgeCheck,
+  ChevronDown,
   CreditCard,
   Gift,
   Heart,
-  Menu,
   PackageCheck,
   Search,
   ShieldCheck,
@@ -45,6 +51,7 @@ import {
 type SortOption = "featured" | "newest" | "price_low" | "price_high" | "rating"
 type PriceFilter = "all" | "under100" | "100to250" | "250plus"
 type RatingFilter = "all" | "4plus" | "45plus"
+type ArtistFilter = "all" | string
 
 function sampleUuid(kind: "artwork" | "artist", index: number) {
   const namespace = kind === "artist" ? "4001" : "4002"
@@ -96,6 +103,28 @@ const fallbackArtworks: ArtistArtworkWithArtist[] = Array.from({ length: 24 }, (
 
 const favoriteStorageKey = "giftra:favorites"
 const categoryEntries = Object.entries(CATEGORY_LABELS) as Array<[GiftCategory, string]>
+const explainerSlides = [
+  {
+    label: "Custom gifts",
+    title: "Find a gift style, then make it personal",
+    description: "Browse real sample work from Giftra artists, compare categories, save favorites, and start with inspiration instead of a blank form.",
+  },
+  {
+    label: "Browse first",
+    title: "Explore anonymously before creating an account",
+    description: "Customers can search artwork, filter by category or artist, and understand pricing before signing in to raise a request.",
+  },
+  {
+    label: "Guided workflow",
+    title: "Request, quote, payment, chat, delivery",
+    description: "Once a request is submitted, Giftra supports admin review, artist assignment, secure payment, protected chat, delivery tracking, and reviews.",
+  },
+  {
+    label: "Artist marketplace",
+    title: "Every listing leads to a made-to-order gift",
+    description: "Artists showcase portfolio samples while customers request similar pieces tailored to occasion, recipient, budget, and deadline.",
+  },
+]
 
 function anonymousArtistName(artistId: string) {
   return `Artist ${artistId.slice(-4).toUpperCase()}`
@@ -196,23 +225,39 @@ export function LandingPage() {
   const [favorites, setFavorites] = useState<string[]>([])
   const [search, setSearch] = useState("")
   const [category, setCategory] = useState<GiftCategory | "all">("all")
+  const [artist, setArtist] = useState<ArtistFilter>("all")
   const [sort, setSort] = useState<SortOption>("featured")
   const [price, setPrice] = useState<PriceFilter>("all")
   const [rating, setRating] = useState<RatingFilter>("all")
   const [selectedArtwork, setSelectedArtwork] = useState<ArtistArtworkWithArtist | null>(null)
   const [requestOpen, setRequestOpen] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<UserRole>("customer")
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     async function loadArtworks() {
       try {
-        const [data, currentUser] = await Promise.all([
+        const [data, currentUser, profile] = await Promise.all([
           getPublicArtworks(),
           getCurrentUser().catch(() => ({ user: null })),
+          getCurrentProfile().catch(() => null),
         ])
         setArtworks(data.length > 0 ? data : fallbackArtworks)
         setIsLoggedIn(Boolean(currentUser.user))
+        setUserId(currentUser.user?.id || null)
+        setUserRole(profile?.role || "customer")
+
+        if (currentUser.user) {
+          const localWishlist = JSON.parse(localStorage.getItem(favoriteStorageKey) || "[]") as string[]
+          if (localWishlist.length > 0) {
+            await syncWishlistItems(currentUser.user.id, localWishlist)
+          }
+          const dbWishlist = await getWishlistArtworkIds(currentUser.user.id)
+          setFavorites(dbWishlist)
+          localStorage.setItem(favoriteStorageKey, JSON.stringify(dbWishlist))
+        }
       } catch {
         setArtworks(fallbackArtworks)
       } finally {
@@ -229,6 +274,23 @@ export function LandingPage() {
       counts[artwork.category] = (counts[artwork.category] || 0) + 1
       return counts
     }, {})
+  }, [artworks])
+
+  const artistOptions = useMemo(() => {
+    const seen = new Set<string>()
+    return artworks
+      .filter((artwork) => {
+        if (seen.has(artwork.artist_id)) return false
+        seen.add(artwork.artist_id)
+        return true
+      })
+      .map((artwork) => ({
+        id: artwork.artist_id,
+        name: anonymousArtistName(artwork.artist_id),
+        rating: getRating(artwork),
+        count: artworks.filter((item) => item.artist_id === artwork.artist_id).length,
+      }))
+      .sort((a, b) => b.rating - a.rating || b.count - a.count)
   }, [artworks])
 
   const featured = useMemo(() => {
@@ -248,12 +310,14 @@ export function LandingPage() {
         artwork.category,
         anonymousArtistName(artwork.artist_id),
         ...(artwork.tags || []),
+        ...(artwork.artist?.specialties || []),
       ].join(" ").toLowerCase()
       const maxPrice = artwork.price_max || artwork.price_min || 0
       const itemRating = getRating(artwork)
 
       const matchesSearch = text.includes(search.toLowerCase())
       const matchesCategory = category === "all" || artwork.category === category
+      const matchesArtist = artist === "all" || artwork.artist_id === artist
       const matchesPrice =
         price === "all" ||
         (price === "under100" && maxPrice <= 100) ||
@@ -264,7 +328,7 @@ export function LandingPage() {
         (rating === "4plus" && itemRating >= 4) ||
         (rating === "45plus" && itemRating >= 4.5)
 
-      return matchesSearch && matchesCategory && matchesPrice && matchesRating
+      return matchesSearch && matchesCategory && matchesArtist && matchesPrice && matchesRating
     })
 
     return filtered.sort((a, b) => {
@@ -274,9 +338,11 @@ export function LandingPage() {
       if (sort === "rating") return getRating(b) - getRating(a)
       return Number(b.is_featured) - Number(a.is_featured) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     })
-  }, [artworks, category, price, rating, search, sort])
+  }, [artist, artworks, category, price, rating, search, sort])
 
-  const toggleFavorite = (artworkId: string) => {
+  const toggleFavorite = async (artworkId: string) => {
+    const shouldSave = !favorites.includes(artworkId)
+
     setFavorites((current) => {
       const next = current.includes(artworkId)
         ? current.filter((id) => id !== artworkId)
@@ -284,6 +350,10 @@ export function LandingPage() {
       localStorage.setItem(favoriteStorageKey, JSON.stringify(next))
       return next
     })
+
+    if (userId) {
+      await toggleWishlistItem(userId, artworkId, shouldSave)
+    }
   }
 
   const startRequest = (artwork: ArtistArtworkWithArtist) => {
@@ -296,6 +366,7 @@ export function LandingPage() {
   const clearFilters = () => {
     setSearch("")
     setCategory("all")
+    setArtist("all")
     setPrice("all")
     setRating("all")
     setSort("featured")
@@ -313,10 +384,7 @@ export function LandingPage() {
               <span className="text-xl font-bold">Giftra</span>
             </Link>
             <Button asChild variant="outline" size="sm" className="lg:hidden">
-              <Link href="/wishlist">
-                <Menu className="mr-2 h-4 w-4" />
-                Browse
-              </Link>
+              <Link href="#artworks">Browse</Link>
             </Button>
           </div>
 
@@ -347,20 +415,36 @@ export function LandingPage() {
           </div>
 
           <div className="flex items-center justify-between gap-2 lg:justify-end">
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/auth/signup?role=artist">
-                <Store className="mr-2 h-4 w-4" />
-                Sell
-              </Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/auth/login">
-                <UserRound className="mr-2 h-4 w-4" />
-                Sign In
-              </Link>
-            </Button>
+            {isLoggedIn ? (
+              <>
+                <Button asChild variant="ghost" size="sm">
+                  <Link href={`/${userRole}/settings`}>
+                    <UserRound className="mr-2 h-4 w-4" />
+                    Profile
+                  </Link>
+                </Button>
+                <Button asChild variant="ghost" size="sm">
+                  <Link href={`/${userRole}/dashboard`}>Dashboard</Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button asChild variant="ghost" size="sm">
+                  <Link href="/auth/signup?role=artist">
+                    <Store className="mr-2 h-4 w-4" />
+                    Sell
+                  </Link>
+                </Button>
+                <Button asChild variant="ghost" size="sm">
+                  <Link href="/auth/login">
+                    <UserRound className="mr-2 h-4 w-4" />
+                    Sign In
+                  </Link>
+                </Button>
+              </>
+            )}
             <Button asChild variant="outline" size="sm">
-              <Link href="/browse">
+              <Link href="/wishlist">
                 <Heart className="mr-2 h-4 w-4" />
                 {favorites.length}
               </Link>
@@ -416,45 +500,81 @@ export function LandingPage() {
                   </button>
                 ))}
               </div>
+              <div className="mt-5 border-t pt-4">
+                <div className="mb-2 text-sm font-semibold">Featured Artists</div>
+                <div className="space-y-1">
+                  {artistOptions.slice(0, 6).map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setArtist(option.id)}
+                      className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                    >
+                      <span className="truncate">{option.name}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">{option.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </aside>
 
             <Carousel opts={{ align: "start", loop: true }} className="min-w-0">
               <CarouselContent>
-                {featured.slice(0, 6).map((artwork) => (
-                  <CarouselItem key={artwork.id}>
-                    <div className="grid min-h-[300px] overflow-hidden rounded-md border bg-card md:grid-cols-[1.1fr_0.9fr]">
+                {explainerSlides.map((slide, index) => {
+                  const artwork = featured[index % Math.max(featured.length, 1)]
+                  return (
+                    <CarouselItem key={slide.title}>
+                      <div className="grid min-h-[340px] overflow-hidden rounded-md border bg-card md:grid-cols-[1.05fr_0.95fr]">
                       <div className="flex flex-col justify-between gap-4 p-6">
                         <div>
-                          <Badge className="mb-3 rounded-sm">Featured custom gift</Badge>
+                          <Badge className="mb-3 rounded-sm">{slide.label}</Badge>
                           <h1 className="max-w-xl text-3xl font-bold leading-tight md:text-4xl">
-                            Handmade gifts ready to customize
+                            {slide.title}
                           </h1>
                           <p className="mt-3 max-w-xl text-sm text-muted-foreground md:text-base">
-                            Browse artist samples, compare styles, save favorites, and raise a custom request only when you are ready.
+                            {slide.description}
                           </p>
+                          <div className="mt-5 grid max-w-lg gap-2 text-sm text-muted-foreground sm:grid-cols-3">
+                            <span className="rounded-md bg-muted px-3 py-2">Browse samples</span>
+                            <span className="rounded-md bg-muted px-3 py-2">Save favorites</span>
+                            <span className="rounded-md bg-muted px-3 py-2">Raise request</span>
+                          </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <Button asChild>
                             <Link href="#artworks">
                               Shop listings
-                              <ArrowRight className="ml-2 h-4 w-4" />
+                              <ChevronDown className="ml-2 h-4 w-4" />
                             </Link>
                           </Button>
-                          <Button asChild variant="outline">
-                            <Link href={`/artists/${artwork.artist_id}`}>View featured artist</Link>
-                          </Button>
+                          {artwork ? (
+                            <Button asChild variant="outline">
+                              <Link href={`/artists/${artwork.artist_id}`}>View sample artist</Link>
+                            </Button>
+                          ) : null}
                         </div>
                       </div>
                       <div className="relative min-h-[220px] bg-muted">
-                        <img src={artwork.image_url} alt="" className="h-full w-full object-cover" />
-                        <div className="absolute bottom-3 left-3 right-3 rounded-md bg-background/95 p-3 shadow-sm">
-                          <p className="line-clamp-1 text-sm font-semibold">{artwork.title}</p>
-                          <p className="text-xs text-muted-foreground">{formatPrice(artwork)} - {CATEGORY_LABELS[artwork.category]}</p>
-                        </div>
+                        {artwork ? (
+                          <>
+                            <img src={artwork.image_url} alt="" className="h-full w-full object-cover" />
+                            <div className="absolute bottom-3 left-3 right-3 rounded-md bg-background/95 p-3 shadow-sm">
+                              <p className="line-clamp-1 text-sm font-semibold">{artwork.title}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatPrice(artwork)} - {CATEGORY_LABELS[artwork.category]} - {anonymousArtistName(artwork.artist_id)}
+                              </p>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex h-full min-h-[260px] items-center justify-center text-muted-foreground">
+                            <Gift className="h-12 w-12" />
+                          </div>
+                        )}
                       </div>
                     </div>
                   </CarouselItem>
-                ))}
+                  )
+                })}
               </CarouselContent>
               <CarouselPrevious className="left-2" />
               <CarouselNext className="right-2" />
@@ -477,6 +597,14 @@ export function LandingPage() {
                 <p className="mt-1 text-xs text-muted-foreground">Every listing becomes a custom request.</p>
               </div>
             </aside>
+          </div>
+          <div className="flex justify-center pb-4">
+            <Button asChild variant="ghost" size="sm" className="gap-2">
+              <Link href="#artworks">
+                View all artwork listings
+                <ChevronDown className="h-4 w-4" />
+              </Link>
+            </Button>
           </div>
         </section>
 
@@ -539,7 +667,31 @@ export function LandingPage() {
                     {isLoading ? "Loading marketplace..." : `${filteredArtworks.length} results from ${artworks.length} listings`}
                   </p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-[160px_160px_180px]">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[160px_170px_160px_160px_180px]">
+                  <Select value={category} onValueChange={(value) => setCategory(value as GiftCategory | "all")}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {categoryEntries.map(([value, label]) => (
+                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={artist} onValueChange={setArtist}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Artist" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Artists</SelectItem>
+                      {artistOptions.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Select value={price} onValueChange={(value) => setPrice(value as PriceFilter)}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Price" />
