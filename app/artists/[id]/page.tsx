@@ -5,11 +5,12 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
+import { MarketplaceHeader } from "@/components/marketplace/marketplace-header"
 import { CreateRequestDialog } from "@/components/create-request-dialog"
 import { getArtistPortfolio, getCurrentUser } from "@/lib/supabase/queries"
 import type { ArtistArtwork, GiftCategory, Profile, Review } from "@/lib/types/database"
 import { CATEGORY_LABELS } from "@/lib/types/database"
-import { ArrowLeft, Gift, Heart, Star, UserCheck } from "lucide-react"
+import { ArrowLeft, Heart, Star, UserCheck } from "lucide-react"
 
 const favoriteStorageKey = "giftra:favorites"
 
@@ -104,22 +105,16 @@ export default function PublicArtistPortfolioPage({
 
   return (
     <main className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <Button asChild variant="ghost" size="sm" className="gap-2">
-            <Link href="/browse">
+      <MarketplaceHeader wishlistCount={favorites.length} />
+
+      <section className="border-b bg-muted/30">
+        <div className="container mx-auto px-4 py-10">
+          <Button asChild variant="ghost" size="sm" className="mb-4 gap-2">
+            <Link href="/#artworks">
               <ArrowLeft className="h-4 w-4" />
               Browse Gifts
             </Link>
           </Button>
-          <Button asChild size="sm">
-            <Link href="/auth/signup?role=customer">Start Request</Link>
-          </Button>
-        </div>
-      </header>
-
-      <section className="border-b bg-muted/30">
-        <div className="container mx-auto px-4 py-10">
           <div className="flex flex-col gap-6 md:flex-row md:items-start">
             <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-primary/10">
               {artist.avatar_url ? (
@@ -161,7 +156,7 @@ export default function PublicArtistPortfolioPage({
             </Button>
           ) : (
             <Button asChild>
-              <Link href="/auth/signup?role=customer&next=/browse">Request This Artist</Link>
+              <Link href="/auth/customer/signup?next=/browse">Request This Artist</Link>
             </Button>
           )}
         </div>
@@ -174,14 +169,14 @@ export default function PublicArtistPortfolioPage({
             {artworks.map((artwork) => {
               const isFavorite = favorites.includes(artwork.id)
               return (
-                <Card key={artwork.id} className="overflow-hidden">
-                  <div className="relative aspect-square bg-muted">
+                <Card key={artwork.id} className="overflow-hidden rounded-lg shadow-sm">
+                  <div className="relative aspect-[4/5] bg-muted">
                     <img src={artwork.image_url} alt="" className="h-full w-full object-cover" />
                     <Button
                       type="button"
                       size="icon"
                       variant={isFavorite ? "default" : "secondary"}
-                      className="absolute right-3 top-3"
+                      className="absolute right-3 top-3 rounded-full shadow-sm"
                       onClick={() => toggleFavorite(artwork.id)}
                     >
                       <Heart className={isFavorite ? "h-4 w-4 fill-current" : "h-4 w-4"} />
@@ -204,7 +199,7 @@ export default function PublicArtistPortfolioPage({
                         <Button size="sm" onClick={() => startRequest(artwork)}>Request Similar</Button>
                       ) : (
                         <Button asChild size="sm">
-                          <Link href="/auth/signup?role=customer&next=/browse">Request Similar</Link>
+                          <Link href="/auth/customer/signup?next=/browse">Request Similar</Link>
                         </Button>
                       )}
                     </div>

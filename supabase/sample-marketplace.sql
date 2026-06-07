@@ -7,6 +7,17 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+DELETE FROM auth.identities
+WHERE provider = 'email'
+  AND (
+    provider_id = 'admin@giftra.co.in'
+    OR provider_id LIKE 'artist%@giftra.test'
+    OR provider_id LIKE 'customer%@giftra.test'
+    OR identity_data->>'email' = 'admin@giftra.co.in'
+    OR identity_data->>'email' LIKE 'artist%@giftra.test'
+    OR identity_data->>'email' LIKE 'customer%@giftra.test'
+  );
+
 DELETE FROM auth.users
 WHERE id = '00000000-0000-0000-0000-000000000001'
   OR email = 'admin@giftra.co.in'
@@ -82,6 +93,7 @@ BEGIN
     email,
     encrypted_password,
     email_confirmed_at,
+    raw_app_meta_data,
     raw_user_meta_data,
     created_at,
     updated_at
@@ -94,11 +106,42 @@ BEGIN
     'admin@giftra.co.in',
     crypt('Password123!', gen_salt('bf')),
     NOW(),
+    '{"provider":"email","providers":["email"]}'::JSONB,
     '{"role":"admin","full_name":"Giftra Admin"}'::JSONB,
     NOW(),
     NOW()
   )
   ON CONFLICT (id) DO NOTHING;
+
+  INSERT INTO auth.identities (
+    id,
+    user_id,
+    provider_id,
+    provider,
+    identity_data,
+    last_sign_in_at,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    '00000000-0000-0000-0000-000000000001',
+    '00000000-0000-0000-0000-000000000001',
+    '00000000-0000-0000-0000-000000000001',
+    'email',
+    jsonb_build_object(
+      'sub', '00000000-0000-0000-0000-000000000001',
+      'email', 'admin@giftra.co.in',
+      'email_verified', true,
+      'phone_verified', false
+    ),
+    NOW(),
+    NOW(),
+    NOW()
+  )
+  ON CONFLICT (provider_id, provider) DO UPDATE SET
+    user_id = EXCLUDED.user_id,
+    identity_data = EXCLUDED.identity_data,
+    updated_at = NOW();
 
   INSERT INTO public.profiles (id, email, full_name, role, is_super_admin)
   VALUES (
@@ -122,6 +165,7 @@ BEGIN
       email,
       encrypted_password,
       email_confirmed_at,
+      raw_app_meta_data,
       raw_user_meta_data,
       created_at,
       updated_at
@@ -134,11 +178,42 @@ BEGIN
       'artist' || i || '@giftra.test',
       crypt('Password123!', gen_salt('bf')),
       NOW(),
+      '{"provider":"email","providers":["email"]}'::JSONB,
       jsonb_build_object('role', 'artist', 'full_name', artist_names[i]),
       NOW(),
       NOW()
     )
     ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO auth.identities (
+      id,
+      user_id,
+      provider_id,
+      provider,
+      identity_data,
+      last_sign_in_at,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      artist_id,
+      artist_id,
+      artist_id::TEXT,
+      'email',
+      jsonb_build_object(
+        'sub', artist_id::TEXT,
+        'email', 'artist' || i || '@giftra.test',
+        'email_verified', true,
+        'phone_verified', false
+      ),
+      NOW(),
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (provider_id, provider) DO UPDATE SET
+      user_id = EXCLUDED.user_id,
+      identity_data = EXCLUDED.identity_data,
+      updated_at = NOW();
 
     INSERT INTO public.profiles (
       id,
@@ -185,6 +260,7 @@ BEGIN
       email,
       encrypted_password,
       email_confirmed_at,
+      raw_app_meta_data,
       raw_user_meta_data,
       created_at,
       updated_at
@@ -197,11 +273,42 @@ BEGIN
       'customer' || i || '@giftra.test',
       crypt('Password123!', gen_salt('bf')),
       NOW(),
+      '{"provider":"email","providers":["email"]}'::JSONB,
       jsonb_build_object('role', 'customer', 'full_name', 'Sample Customer ' || i),
       NOW(),
       NOW()
     )
     ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO auth.identities (
+      id,
+      user_id,
+      provider_id,
+      provider,
+      identity_data,
+      last_sign_in_at,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      customer_id,
+      customer_id,
+      customer_id::TEXT,
+      'email',
+      jsonb_build_object(
+        'sub', customer_id::TEXT,
+        'email', 'customer' || i || '@giftra.test',
+        'email_verified', true,
+        'phone_verified', false
+      ),
+      NOW(),
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (provider_id, provider) DO UPDATE SET
+      user_id = EXCLUDED.user_id,
+      identity_data = EXCLUDED.identity_data,
+      updated_at = NOW();
 
     INSERT INTO public.profiles (id, email, full_name, role)
     VALUES (

@@ -4,6 +4,7 @@ import { useState, Suspense } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -49,17 +50,18 @@ const signupCopy: Record<Exclude<UserRole, "admin">, {
   },
 }
 
-function SignupForm() {
+export function SignupForm({ fixedRole }: { fixedRole?: Exclude<UserRole, "admin"> }) {
   const searchParams = useSearchParams()
   const initialRole = searchParams.get("role")
   const next = searchParams.get("next")
+  const isRoleLocked = Boolean(fixedRole || isSignupRole(initialRole))
   
   const [showPassword, setShowPassword] = useState(false)
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [role, setRole] = useState<Exclude<UserRole, "admin">>(
-    isSignupRole(initialRole) ? initialRole : "customer"
+    fixedRole || (isSignupRole(initialRole) ? initialRole : "customer")
   )
   const [isLoading, setIsLoading] = useState(false)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
@@ -126,10 +128,13 @@ function SignupForm() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30 p-4">
-      <div className="mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-5xl items-center">
+    <div className="min-h-screen bg-background">
+      <div className="bg-primary px-4 py-2 text-center text-xs font-semibold text-primary-foreground">
+        Join Giftra to request or create personalised gifts
+      </div>
+      <div className="mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-6xl items-center px-4 py-8">
         <div className="grid w-full gap-6 lg:grid-cols-[1fr_440px]">
-          <section className="flex flex-col justify-center rounded-lg border bg-card p-6 lg:p-8">
+          <section className="flex flex-col justify-center rounded-lg border bg-card p-6 shadow-sm lg:p-8">
             <Link href="/" className="inline-flex items-center gap-2 mb-8">
               <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
                 <Gift className="w-6 h-6 text-primary-foreground" />
@@ -137,7 +142,10 @@ function SignupForm() {
               <span className="font-bold text-2xl">Giftra</span>
             </Link>
 
-            <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-lg border px-3 py-1 text-sm text-muted-foreground">
+            <Badge className="mb-4 w-fit rounded-full bg-accent text-accent-foreground">
+              Giftra marketplace
+            </Badge>
+            <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-full bg-muted px-3 py-1 text-sm text-muted-foreground">
               <CopyIcon className="w-4 h-4" />
               {copy.eyebrow}
             </div>
@@ -146,36 +154,38 @@ function SignupForm() {
 
             <div className="mt-8 grid gap-3">
               {copy.bullets.map((bullet) => (
-                <div key={bullet} className="flex items-center gap-3 text-sm">
+                <div key={bullet} className="flex items-center gap-3 rounded-lg bg-muted p-3 text-sm">
                   <CheckCircle className="w-4 h-4 text-primary" />
                   {bullet}
                 </div>
               ))}
             </div>
 
-            <div className="mt-8 grid grid-cols-2 gap-3">
-              <Button
-                type="button"
-                variant={role === "customer" ? "default" : "outline"}
-                className="gap-2"
-                onClick={() => setRole("customer")}
-              >
-                <User className="w-4 h-4" />
-                Customer
-              </Button>
-              <Button
-                type="button"
-                variant={role === "artist" ? "default" : "outline"}
-                className="gap-2"
-                onClick={() => setRole("artist")}
-              >
-                <Palette className="w-4 h-4" />
-                Artist
-              </Button>
-            </div>
+            {!isRoleLocked && (
+              <div className="mt-8 grid grid-cols-2 gap-3">
+                <Button
+                  type="button"
+                  variant={role === "customer" ? "default" : "outline"}
+                  className="gap-2"
+                  onClick={() => setRole("customer")}
+                >
+                  <User className="w-4 h-4" />
+                  Customer
+                </Button>
+                <Button
+                  type="button"
+                  variant={role === "artist" ? "default" : "outline"}
+                  className="gap-2"
+                  onClick={() => setRole("artist")}
+                >
+                  <Palette className="w-4 h-4" />
+                  Artist
+                </Button>
+              </div>
+            )}
           </section>
 
-        <Card>
+        <Card className="rounded-lg shadow-sm">
           <CardHeader className="space-y-1">
             <CardTitle className="text-xl">{copy.cardTitle}</CardTitle>
             <CardDescription>
@@ -300,6 +310,7 @@ function SignupForm() {
                 </div>
               </div>
 
+              {!isRoleLocked && (
               <div className="space-y-3">
                 <Label>I want to join as</Label>
                 <RadioGroup value={role} onValueChange={(v: string) => setRole(v as Exclude<UserRole, "admin">)}>
@@ -341,6 +352,7 @@ function SignupForm() {
                   </div>
                 </RadioGroup>
               </div>
+              )}
 
               <Button type="submit" className="w-full" disabled={isLoading || isGoogleLoading}>
                 {isLoading ? "Creating account..." : copy.cta}
@@ -358,7 +370,7 @@ function SignupForm() {
 
             <p className="text-center text-sm text-muted-foreground mt-6">
               Already have an account?{" "}
-              <Link href="/auth/login" className="text-primary hover:underline font-medium">
+              <Link href={role === "artist" ? "/auth/artist/login" : "/auth/customer/login"} className="text-primary hover:underline font-medium">
                 Sign in
               </Link>
             </p>

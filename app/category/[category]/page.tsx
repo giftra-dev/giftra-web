@@ -69,7 +69,7 @@ export default function CategoryPage() {
 
   if (!category) {
     return (
-      <main className="min-h-screen bg-muted/30">
+      <main className="min-h-screen bg-background">
         <MarketplaceHeader wishlistCount={favorites.length} />
         <div className="container mx-auto px-4 py-12 text-center">
           <p className="font-semibold">Unknown category</p>
@@ -82,7 +82,7 @@ export default function CategoryPage() {
   }
 
   return (
-    <main className="min-h-screen bg-muted/30">
+    <main className="min-h-screen bg-background">
       <MarketplaceHeader wishlistCount={favorites.length} />
       <div className="container mx-auto px-4 py-5">
         <Button asChild variant="ghost" size="sm" className="mb-3">
@@ -91,7 +91,7 @@ export default function CategoryPage() {
             Back
           </Link>
         </Button>
-        <section className="rounded-md border bg-card p-5">
+        <section className="rounded-lg border bg-card p-5 shadow-sm">
           <h1 className="text-3xl font-bold">{CATEGORY_LABELS[category]}</h1>
           <p className="mt-2 text-sm text-muted-foreground">Browse custom gift samples and request a personalized version from an artist.</p>
           <div className="mt-5 grid gap-2 md:grid-cols-[1fr_180px]">
@@ -114,11 +114,11 @@ export default function CategoryPage() {
 
         <section className="py-5">
           {filtered.length === 0 ? (
-            <div className="rounded-md border border-dashed bg-card p-10 text-center text-sm text-muted-foreground">
+            <div className="rounded-lg border border-dashed bg-card p-10 text-center text-sm text-muted-foreground shadow-sm">
               No listings found in this category yet.
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
               {filtered.map((artwork) => (
                 <ArtworkCard
                   key={artwork.id}

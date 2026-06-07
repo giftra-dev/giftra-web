@@ -7,7 +7,13 @@ import { MarketplaceHeader } from "@/components/marketplace/marketplace-header"
 import { readWishlist, writeWishlist } from "@/components/marketplace/utils"
 import { CreateRequestDialog } from "@/components/create-request-dialog"
 import { Button } from "@/components/ui/button"
-import { getCurrentUser, getPublicArtworks } from "@/lib/supabase/queries"
+import {
+  getCurrentUser,
+  getPublicArtworks,
+  getWishlistArtworkIds,
+  syncWishlistItems,
+  toggleWishlistItem,
+} from "@/lib/supabase/queries"
 import type { ArtistArtworkWithArtist, GiftCategory } from "@/lib/types/database"
 import { Heart } from "lucide-react"
 
@@ -15,17 +21,29 @@ export default function WishlistPage() {
   const [artworks, setArtworks] = useState<ArtistArtworkWithArtist[]>([])
   const [favorites, setFavorites] = useState<string[]>([])
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
   const [selectedArtwork, setSelectedArtwork] = useState<ArtistArtworkWithArtist | null>(null)
   const [requestOpen, setRequestOpen] = useState(false)
 
   useEffect(() => {
     async function loadWishlist() {
-      const wishlist = readWishlist()
-      setFavorites(wishlist)
+      const localWishlist = readWishlist()
+      setFavorites(localWishlist)
       const [items, userData] = await Promise.all([
         getPublicArtworks(),
         getCurrentUser().catch(() => ({ user: null })),
       ])
+
+      if (userData.user) {
+        if (localWishlist.length > 0) {
+          await syncWishlistItems(userData.user.id, localWishlist)
+        }
+        const dbWishlist = await getWishlistArtworkIds(userData.user.id)
+        setFavorites(dbWishlist)
+        writeWishlist(dbWishlist)
+        setUserId(userData.user.id)
+      }
+
       setArtworks(items)
       setIsLoggedIn(Boolean(userData.user))
     }
@@ -37,7 +55,9 @@ export default function WishlistPage() {
     return artworks.filter((artwork) => favorites.includes(artwork.id))
   }, [artworks, favorites])
 
-  const toggleFavorite = (artworkId: string) => {
+  const toggleFavorite = async (artworkId: string) => {
+    const shouldSave = !favorites.includes(artworkId)
+
     setFavorites((current) => {
       const next = current.includes(artworkId)
         ? current.filter((id) => id !== artworkId)
@@ -45,27 +65,33 @@ export default function WishlistPage() {
       writeWishlist(next)
       return next
     })
+
+    if (userId) {
+      await toggleWishlistItem(userId, artworkId, shouldSave)
+    }
   }
 
   return (
-    <main className="min-h-screen bg-muted/30">
+    <main className="min-h-screen bg-background">
       <MarketplaceHeader wishlistCount={favorites.length} />
       <div className="container mx-auto px-4 py-6">
-        <section className="rounded-md border bg-card p-5">
+        <section className="rounded-lg border bg-card p-5 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
               <Heart className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">Wishlist</h1>
-              <p className="text-sm text-muted-foreground">Saved custom gift ideas live in this browser.</p>
+              <h1 className="text-2xl font-bold">Saved gift ideas</h1>
+              <p className="text-sm text-muted-foreground">
+                {isLoggedIn ? "Saved custom gift ideas are synced to your Giftra account." : "Saved custom gift ideas live in this browser until you sign in."}
+              </p>
             </div>
           </div>
         </section>
 
         <section className="py-5">
           {savedArtworks.length === 0 ? (
-            <div className="rounded-md border border-dashed bg-card p-10 text-center">
+            <div className="rounded-lg border border-dashed bg-card p-10 text-center shadow-sm">
               <p className="font-medium">Your wishlist is empty</p>
               <p className="mt-1 text-sm text-muted-foreground">Save artwork samples while browsing and come back when you are ready to request.</p>
               <Button asChild className="mt-5">

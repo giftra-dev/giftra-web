@@ -4,6 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -25,7 +26,30 @@ const isUserRole = (role: unknown): role is UserRole =>
 const isRoleRoute = (path: string, role: UserRole) =>
   path === `/${role}` || path.startsWith(`/${role}/`)
 
-export default function LoginClient() {
+const loginCopy: Record<Exclude<UserRole, "admin">, {
+  title: string
+  description: string
+  cardTitle: string
+  cardDescription: string
+  signupHref: string
+}> = {
+  customer: {
+    title: "Sign in to request personalised gifts",
+    description: "Browse saved ideas, manage requests, approve quotes, and track every custom gift order.",
+    cardTitle: "Customer sign in",
+    cardDescription: "Access your requests, wishlist, messages, and orders.",
+    signupHref: "/auth/customer/signup",
+  },
+  artist: {
+    title: "Sign in to your artist workspace",
+    description: "Manage assigned orders, portfolio samples, production updates, and customer chats.",
+    cardTitle: "Artist sign in",
+    cardDescription: "Access your orders, portfolio, messages, and availability.",
+    signupHref: "/auth/artist/signup",
+  },
+}
+
+export default function LoginClient({ roleHint = "customer" }: { roleHint?: Exclude<UserRole, "admin"> }) {
   const searchParams = useSearchParams()
 
   const [showPassword, setShowPassword] = useState(false)
@@ -34,6 +58,7 @@ export default function LoginClient() {
   const [isLoading, setIsLoading] = useState(false)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const [error, setError] = useState("")
+  const copy = loginCopy[roleHint]
 
   const getRedirectPath = (role: UserRole) => {
     const redirect = searchParams.get("redirect")
@@ -64,7 +89,7 @@ export default function LoginClient() {
     try {
       const redirect = searchParams.get("redirect")
       const { error: googleError } = await signInWithGoogle(
-        undefined,
+        roleHint,
         redirect?.startsWith("/") && !redirect.startsWith("//") ? redirect : undefined
       )
       if (googleError) {
@@ -125,29 +150,47 @@ export default function LoginClient() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
-      <div className="w-full max-w-md">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
+    <div className="min-h-screen bg-background">
+      <div className="bg-primary px-4 py-2 text-center text-xs font-semibold text-primary-foreground">
+        Personalised gifts, protected requests, artist-made memories
+      </div>
+      <div className="mx-auto grid min-h-[calc(100vh-2rem)] w-full max-w-6xl items-center gap-6 px-4 py-8 lg:grid-cols-[1fr_440px]">
+        <section className="hidden rounded-lg border bg-card p-8 shadow-sm lg:block">
+          <Link href="/" className="inline-flex items-center gap-2 mb-10">
+            <div className="w-11 h-11 rounded-lg bg-primary flex items-center justify-center">
               <Gift className="w-6 h-6 text-primary-foreground" />
             </div>
-            <span className="font-bold text-2xl">Giftra</span>
+            <span className="font-bold text-3xl">Giftra</span>
           </Link>
-
-          <h1 className="text-2xl font-bold">Welcome back</h1>
-          <p className="text-muted-foreground mt-1">
-            Sign in to your account to continue
+          <Badge className="mb-4 rounded-full bg-accent text-accent-foreground">
+            {roleHint === "artist" ? "Artist workspace" : "Customer gifting"}
+          </Badge>
+          <h1 className="max-w-xl text-4xl font-bold leading-tight">{copy.title}</h1>
+          <p className="mt-4 max-w-xl text-muted-foreground">
+            {copy.description}
           </p>
-        </div>
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            {["Browse samples", "Approve quotes", "Track delivery"].map((item) => (
+              <div key={item} className="rounded-lg bg-muted p-4 text-sm font-medium">{item}</div>
+            ))}
+          </div>
+        </section>
 
-        {/* Card */}
-        <Card>
+        <div>
+          <div className="mb-6 text-center lg:hidden">
+            <Link href="/" className="inline-flex items-center gap-2">
+              <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
+                <Gift className="w-6 h-6 text-primary-foreground" />
+              </div>
+              <span className="font-bold text-2xl">Giftra</span>
+            </Link>
+          </div>
+
+        <Card className="rounded-lg shadow-sm">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-xl">Sign in</CardTitle>
+            <CardTitle className="text-xl">{copy.cardTitle}</CardTitle>
             <CardDescription>
-              Enter your email and password to access your account
+              {copy.cardDescription}
             </CardDescription>
           </CardHeader>
 
@@ -269,7 +312,7 @@ export default function LoginClient() {
             <p className="text-center text-sm text-muted-foreground mt-6">
               {"Don't have an account? "}
               <Link
-                href="/auth/signup"
+                href={copy.signupHref}
                 className="text-primary hover:underline font-medium"
               >
                 Sign up
@@ -277,6 +320,7 @@ export default function LoginClient() {
             </p>
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   )

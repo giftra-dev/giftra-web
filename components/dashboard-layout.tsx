@@ -26,7 +26,8 @@ import {
   Settings,
   Users,
   History,
-  UserCheck
+  UserCheck,
+  Flag
 } from "lucide-react"
 import { OrderHistoryModal } from "@/components/order-history-modal"
 import { cn } from "@/lib/utils"
@@ -61,6 +62,7 @@ const roleNavItems: Record<UserRole, { href: string; label: string; icon: React.
     { href: "/admin/orders", label: "Orders", icon: Package },
     { href: "/admin/users", label: "Users", icon: Users },
     { href: "/admin/artists", label: "Artists", icon: UserCheck },
+    { href: "/admin/reports", label: "Reports", icon: Flag },
     { href: "/admin/chats", label: "Chat Monitor", icon: MessageSquare },
   ],
 }
@@ -106,7 +108,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       ])
 
       if (!user) {
-        router.push('/auth/login')
+        router.push('/auth/customer/login')
         return
       }
 
@@ -215,7 +217,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         <div className="text-center">
           <p className="text-muted-foreground mb-4">Please sign in to continue</p>
           <Button asChild>
-            <Link href="/auth/login">Sign In</Link>
+            <Link href="/auth/customer/login">Sign In</Link>
           </Button>
         </div>
       </div>
@@ -263,15 +265,20 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background flex">
       {/* Sidebar */}
-      <aside className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
+      <aside className="w-64 bg-card border-r border-border flex flex-col shadow-sm">
         {/* Logo */}
-        <div className="h-16 border-b border-sidebar-border flex items-center px-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-sidebar-primary flex items-center justify-center">
-              <Gift className="w-5 h-5 text-sidebar-primary-foreground" />
-            </div>
-            <span className="font-bold text-lg text-sidebar-foreground">Giftra</span>
-          </Link>
+        <div className="border-b">
+          <div className="bg-primary px-4 py-2 text-[11px] font-semibold text-primary-foreground">
+            Giftra workspace
+          </div>
+          <div className="h-16 flex items-center px-4">
+            <Link href="/" className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
+                <Gift className="w-5 h-5 text-primary-foreground" />
+              </div>
+              <span className="font-bold text-lg text-foreground">Giftra</span>
+            </Link>
+          </div>
         </div>
 
         {/* Navigation */}
@@ -285,8 +292,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
                 <item.icon className="w-5 h-5" />
@@ -302,20 +309,20 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* User Section */}
-        <div className="p-4 border-t border-sidebar-border">
+        <div className="p-4 border-t">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-sidebar-accent flex items-center justify-center overflow-hidden">
+            <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center overflow-hidden">
               {currentUser.avatar ? (
                 <img src={currentUser.avatar} alt="" className="w-full h-full object-cover" />
               ) : (
-                <RoleIcon className="w-5 h-5 text-sidebar-accent-foreground" />
+                <RoleIcon className="w-5 h-5 text-secondary-foreground" />
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-sidebar-foreground truncate">
+              <p className="text-sm font-medium text-foreground truncate">
                 {currentUser.name}
               </p>
-              <p className="text-xs text-sidebar-foreground/60 capitalize">
+              <p className="text-xs text-muted-foreground capitalize">
                 {currentUser.role}
               </p>
             </div>
@@ -324,7 +331,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <Button
               variant="ghost"
               size="sm"
-              className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+              className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-muted"
               onClick={handleOpenNotifications}
             >
               <Bell className="w-4 h-4 mr-2" />
@@ -339,7 +346,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+                className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-muted"
                 onClick={() => setOrderHistoryOpen(true)}
               >
                 <History className="w-4 h-4 mr-2" />
@@ -350,7 +357,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               asChild
               variant="ghost"
               size="sm"
-              className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+              className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-muted"
             >
               <Link href={`/${currentUser.role}/settings`}>
                 <Settings className="w-4 h-4 mr-2" />
@@ -360,7 +367,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <Button
               variant="ghost"
               size="sm"
-              className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+              className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-muted"
               onClick={handleLogout}
             >
               <LogOut className="w-4 h-4 mr-2" />
@@ -371,7 +378,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto bg-muted/30">
         {children}
       </main>
 

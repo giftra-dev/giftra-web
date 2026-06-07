@@ -7,9 +7,27 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'Giftra - Personalized Gifts, Crafted with Care',
-  description: 'A controlled marketplace for personalized gifts where customers and artists collaborate inside a structured workflow.',
-  generator: 'v0.app',
+  metadataBase: new URL('https://www.giftra.co.in'),
+  title: {
+    default: 'Giftra - Custom Gifts from Real Artists',
+    template: '%s | Giftra',
+  },
+  description: 'Browse custom gift artwork, compare anonymous artist portfolios, save favorites, and raise personalized gift requests through a protected marketplace workflow.',
+  applicationName: 'Giftra',
+  keywords: ['custom gifts', 'personalized gifts', 'artist marketplace', 'handmade gifts', 'custom portraits', 'gift artists'],
+  openGraph: {
+    type: 'website',
+    url: 'https://www.giftra.co.in',
+    siteName: 'Giftra',
+    title: 'Giftra - Custom Gifts from Real Artists',
+    description: 'Explore custom gift samples by category and artist, then request a personalized version for your occasion.',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Giftra - Custom Gifts from Real Artists',
+    description: 'Browse, favorite, and request custom gifts from curated artists.',
+  },
+  generator: 'Giftra',
   icons: {
     icon: [
       {

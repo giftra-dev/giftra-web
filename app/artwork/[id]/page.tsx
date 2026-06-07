@@ -9,11 +9,28 @@ import { anonymousArtistName, formatArtworkPrice, getArtworkRating, readWishlist
 import { CreateRequestDialog } from "@/components/create-request-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
-import { getCurrentUser, getPublicArtworkById, getPublicArtworks } from "@/lib/supabase/queries"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  getCurrentUser,
+  getPublicArtworkById,
+  getPublicArtworks,
+  getWishlistArtworkIds,
+  submitArtworkReport,
+  syncWishlistItems,
+  toggleWishlistItem,
+} from "@/lib/supabase/queries"
 import type { ArtistArtworkWithArtist, GiftCategory } from "@/lib/types/database"
 import { CATEGORY_LABELS } from "@/lib/types/database"
-import { ArrowLeft, BadgeCheck, Heart, ShieldCheck, Star, Truck } from "lucide-react"
+import { ArrowLeft, BadgeCheck, Flag, Heart, ShieldCheck, Star, Truck } from "lucide-react"
 
 export default function ArtworkDetailPage() {
   const params = useParams<{ id: string }>()
@@ -22,8 +39,13 @@ export default function ArtworkDetailPage() {
   const [related, setRelated] = useState<ArtistArtworkWithArtist[]>([])
   const [favorites, setFavorites] = useState<string[]>([])
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [requestOpen, setRequestOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportDetails, setReportDetails] = useState("")
+  const [reportMessage, setReportMessage] = useState("")
+  const [isReporting, setIsReporting] = useState(false)
 
   useEffect(() => {
     async function loadArtwork() {
@@ -35,6 +57,16 @@ export default function ArtworkDetailPage() {
         getPublicArtworks(),
         getCurrentUser().catch(() => ({ user: null })),
       ])
+
+      if (userData.user) {
+        if (wishlist.length > 0) {
+          await syncWishlistItems(userData.user.id, wishlist)
+        }
+        const dbWishlist = await getWishlistArtworkIds(userData.user.id)
+        setFavorites(dbWishlist)
+        writeWishlist(dbWishlist)
+        setUserId(userData.user.id)
+      }
 
       setArtwork(item)
       setIsLoggedIn(Boolean(userData.user))
@@ -51,7 +83,9 @@ export default function ArtworkDetailPage() {
 
   const isFavorite = artwork ? favorites.includes(artwork.id) : false
 
-  const toggleFavorite = (artworkId: string) => {
+  const toggleFavorite = async (artworkId: string) => {
+    const shouldSave = !favorites.includes(artworkId)
+
     setFavorites((current) => {
       const next = current.includes(artworkId)
         ? current.filter((id) => id !== artworkId)
@@ -59,13 +93,45 @@ export default function ArtworkDetailPage() {
       writeWishlist(next)
       return next
     })
+
+    if (userId) {
+      await toggleWishlistItem(userId, artworkId, shouldSave)
+    }
+  }
+
+  const handleReport = async () => {
+    if (!artwork) return
+
+    if (!isLoggedIn) {
+      window.location.href = `/auth/customer/login?redirect=/artwork/${artwork.id}`
+      return
+    }
+
+    setIsReporting(true)
+    setReportMessage("")
+
+    const { error } = await submitArtworkReport({
+      artwork_id: artwork.id,
+      artist_id: artwork.artist_id,
+      reason: "listing_concern",
+      details: reportDetails || "Customer reported this listing for admin review.",
+    })
+
+    setIsReporting(false)
+    if (error) {
+      setReportMessage(error.message)
+      return
+    }
+
+    setReportMessage("Thanks. Giftra admin will review this listing.")
+    setReportDetails("")
   }
 
   const tags = useMemo(() => artwork?.tags?.filter(Boolean).slice(0, 8) || [], [artwork])
 
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-muted/30">
+      <main className="min-h-screen bg-background">
         <MarketplaceHeader wishlistCount={favorites.length} />
         <div className="container mx-auto grid gap-6 px-4 py-6 lg:grid-cols-[1fr_420px]">
           <Skeleton className="aspect-square w-full rounded-md" />
@@ -82,7 +148,7 @@ export default function ArtworkDetailPage() {
 
   if (!artwork) {
     return (
-      <main className="min-h-screen bg-muted/30">
+      <main className="min-h-screen bg-background">
         <MarketplaceHeader wishlistCount={favorites.length} />
         <div className="container mx-auto px-4 py-12 text-center">
           <p className="text-lg font-semibold">Artwork not found</p>
@@ -96,7 +162,7 @@ export default function ArtworkDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-muted/30">
+    <main className="min-h-screen bg-background">
       <MarketplaceHeader wishlistCount={favorites.length} />
       <div className="container mx-auto px-4 py-4">
         <Button asChild variant="ghost" size="sm" className="mb-3">
@@ -106,8 +172,8 @@ export default function ArtworkDetailPage() {
           </Link>
         </Button>
 
-        <section className="grid gap-6 rounded-md border bg-card p-4 lg:grid-cols-[1fr_420px]">
-          <div className="overflow-hidden rounded-md bg-muted">
+        <section className="grid gap-6 rounded-lg border bg-card p-4 shadow-sm lg:grid-cols-[1fr_420px]">
+          <div className="overflow-hidden rounded-lg bg-muted">
             <img src={artwork.image_url} alt="" className="aspect-square h-full w-full object-cover" />
           </div>
 
@@ -131,6 +197,9 @@ export default function ArtworkDetailPage() {
             <div>
               <p className="text-3xl font-bold">{formatArtworkPrice(artwork)}</p>
               <p className="mt-1 text-sm text-muted-foreground">Final quote depends on size, deadline, materials, and personalization.</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Estimated custom timeline: 5-14 days after quote approval, depending on complexity and shipping.
+              </p>
             </div>
 
             <p className="text-sm leading-6 text-muted-foreground">{artwork.description || "Use this sample as inspiration for a made-to-order custom gift."}</p>
@@ -150,7 +219,7 @@ export default function ArtworkDetailPage() {
                 </Button>
               ) : (
                 <Button asChild size="lg">
-                  <Link href={`/auth/signup?role=customer&next=/artwork/${artwork.id}?request=1`}>
+                  <Link href={`/auth/customer/signup?next=/artwork/${artwork.id}?request=1`}>
                     Request this style
                   </Link>
                 </Button>
@@ -159,21 +228,29 @@ export default function ArtworkDetailPage() {
                 <Heart className={isFavorite ? "mr-2 h-4 w-4 fill-current" : "mr-2 h-4 w-4"} />
                 {isFavorite ? "Saved to wishlist" : "Add to wishlist"}
               </Button>
+              <Button variant="ghost" size="lg" onClick={() => setReportOpen(true)}>
+                <Flag className="mr-2 h-4 w-4" />
+                Report listing
+              </Button>
             </div>
 
             <div className="grid gap-2 text-sm sm:grid-cols-3">
-              <div className="rounded-md border p-3">
+              <div className="rounded-lg border p-3">
                 <ShieldCheck className="mb-2 h-4 w-4 text-primary" />
                 Protected payment
               </div>
-              <div className="rounded-md border p-3">
+              <div className="rounded-lg border p-3">
                 <BadgeCheck className="mb-2 h-4 w-4 text-primary" />
                 Admin reviewed
               </div>
-              <div className="rounded-md border p-3">
+              <div className="rounded-lg border p-3">
                 <Truck className="mb-2 h-4 w-4 text-primary" />
-                Tracked workflow
+                Delivery tracking
               </div>
+            </div>
+            <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">How this becomes your gift</p>
+              <p className="mt-1">Share recipient, occasion, size, budget, deadline, and reference images. Giftra reviews the request, confirms the artist, and unlocks chat after payment.</p>
             </div>
           </div>
         </section>
@@ -215,6 +292,30 @@ export default function ArtworkDetailPage() {
         preferredArtistId={artwork.artist_id}
         inspirationArtworkId={artwork.id}
       />
+
+      <Dialog open={reportOpen} onOpenChange={setReportOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Report listing</DialogTitle>
+            <DialogDescription>
+              Tell Giftra admin what looks wrong. Reports are private and reviewed by the team.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={reportDetails}
+            onChange={(event) => setReportDetails(event.target.value)}
+            placeholder="Describe the issue, for example duplicate image, inappropriate content, misleading pricing..."
+            rows={5}
+          />
+          {reportMessage ? <p className="text-sm text-muted-foreground">{reportMessage}</p> : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReportOpen(false)}>Close</Button>
+            <Button onClick={handleReport} disabled={isReporting}>
+              {isReporting ? "Submitting..." : "Submit report"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   )
 }
