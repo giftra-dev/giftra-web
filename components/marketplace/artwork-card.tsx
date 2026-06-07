@@ -24,26 +24,26 @@ export function ArtworkCard({
   const rating = getArtworkRating(artwork)
 
   return (
-    <article className="group overflow-hidden rounded-md border bg-card transition hover:border-primary/40 hover:shadow-sm">
-      <div className="relative aspect-square bg-muted">
+    <article className="group overflow-hidden rounded-lg border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+      <div className="relative aspect-[4/5] bg-muted">
         <Link href={`/artwork/${artwork.id}`} aria-label={`View ${artwork.title}`}>
-          <img src={artwork.image_url} alt="" className="h-full w-full object-cover transition group-hover:scale-[1.02]" />
+          <img src={artwork.image_url} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
         </Link>
         <Button
           type="button"
           size="icon"
           variant={isFavorite ? "default" : "secondary"}
-          className="absolute right-2 top-2 h-8 w-8"
+          className="absolute right-2 top-2 h-9 w-9 rounded-full shadow-sm"
           onClick={onFavorite}
           aria-label={isFavorite ? "Remove from wishlist" : "Add to wishlist"}
         >
           <Heart className={isFavorite ? "h-4 w-4 fill-current" : "h-4 w-4"} />
         </Button>
         {artwork.is_featured ? (
-          <Badge className="absolute left-2 top-2 h-6 rounded-sm px-2 text-[11px]">Featured</Badge>
+          <Badge className="absolute left-2 top-2 h-6 rounded-full px-2 text-[11px]">Giftra pick</Badge>
         ) : null}
       </div>
-      <div className="space-y-2 p-3">
+      <div className="space-y-2.5 p-3">
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <Link href={`/category/${artwork.category}`} className="truncate text-muted-foreground hover:text-primary">
             {CATEGORY_LABELS[artwork.category]}
@@ -54,7 +54,7 @@ export function ArtworkCard({
           </span>
         </div>
         <Link href={`/artwork/${artwork.id}`} className="block">
-          <h3 className="line-clamp-2 min-h-10 text-sm font-medium leading-5 hover:text-primary">
+          <h3 className="line-clamp-2 min-h-10 text-sm font-semibold leading-5 hover:text-primary">
             {artwork.title}
           </h3>
         </Link>
@@ -64,7 +64,7 @@ export function ArtworkCard({
         <div className="flex items-end justify-between gap-2">
           <div>
             <p className="text-base font-bold">{formatArtworkPrice(artwork)}</p>
-            <p className="text-[11px] text-muted-foreground">Custom order</p>
+            <p className="text-[11px] text-muted-foreground">Made to order</p>
           </div>
           {isLoggedIn ? (
             <Button size="sm" className="h-8 px-2 text-xs" onClick={onRequest}>
@@ -72,7 +72,7 @@ export function ArtworkCard({
             </Button>
           ) : (
             <Button asChild size="sm" className="h-8 px-2 text-xs">
-              <Link href={`/auth/signup?role=customer&next=/artwork/${artwork.id}?request=1`}>
+              <Link href={`/auth/customer/signup?next=/artwork/${artwork.id}?request=1`}>
                 Request
               </Link>
             </Button>

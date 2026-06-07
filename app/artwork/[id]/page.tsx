@@ -103,7 +103,7 @@ export default function ArtworkDetailPage() {
     if (!artwork) return
 
     if (!isLoggedIn) {
-      window.location.href = `/auth/login?redirect=/artwork/${artwork.id}`
+      window.location.href = `/auth/customer/login?redirect=/artwork/${artwork.id}`
       return
     }
 
@@ -131,7 +131,7 @@ export default function ArtworkDetailPage() {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-muted/30">
+      <main className="min-h-screen bg-background">
         <MarketplaceHeader wishlistCount={favorites.length} />
         <div className="container mx-auto grid gap-6 px-4 py-6 lg:grid-cols-[1fr_420px]">
           <Skeleton className="aspect-square w-full rounded-md" />
@@ -148,7 +148,7 @@ export default function ArtworkDetailPage() {
 
   if (!artwork) {
     return (
-      <main className="min-h-screen bg-muted/30">
+      <main className="min-h-screen bg-background">
         <MarketplaceHeader wishlistCount={favorites.length} />
         <div className="container mx-auto px-4 py-12 text-center">
           <p className="text-lg font-semibold">Artwork not found</p>
@@ -162,7 +162,7 @@ export default function ArtworkDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-muted/30">
+    <main className="min-h-screen bg-background">
       <MarketplaceHeader wishlistCount={favorites.length} />
       <div className="container mx-auto px-4 py-4">
         <Button asChild variant="ghost" size="sm" className="mb-3">
@@ -172,8 +172,8 @@ export default function ArtworkDetailPage() {
           </Link>
         </Button>
 
-        <section className="grid gap-6 rounded-md border bg-card p-4 lg:grid-cols-[1fr_420px]">
-          <div className="overflow-hidden rounded-md bg-muted">
+        <section className="grid gap-6 rounded-lg border bg-card p-4 shadow-sm lg:grid-cols-[1fr_420px]">
+          <div className="overflow-hidden rounded-lg bg-muted">
             <img src={artwork.image_url} alt="" className="aspect-square h-full w-full object-cover" />
           </div>
 
@@ -219,7 +219,7 @@ export default function ArtworkDetailPage() {
                 </Button>
               ) : (
                 <Button asChild size="lg">
-                  <Link href={`/auth/signup?role=customer&next=/artwork/${artwork.id}?request=1`}>
+                  <Link href={`/auth/customer/signup?next=/artwork/${artwork.id}?request=1`}>
                     Request this style
                   </Link>
                 </Button>
@@ -235,20 +235,20 @@ export default function ArtworkDetailPage() {
             </div>
 
             <div className="grid gap-2 text-sm sm:grid-cols-3">
-              <div className="rounded-md border p-3">
+              <div className="rounded-lg border p-3">
                 <ShieldCheck className="mb-2 h-4 w-4 text-primary" />
                 Protected payment
               </div>
-              <div className="rounded-md border p-3">
+              <div className="rounded-lg border p-3">
                 <BadgeCheck className="mb-2 h-4 w-4 text-primary" />
                 Admin reviewed
               </div>
-              <div className="rounded-md border p-3">
+              <div className="rounded-lg border p-3">
                 <Truck className="mb-2 h-4 w-4 text-primary" />
                 Delivery tracking
               </div>
             </div>
-            <div className="rounded-md border bg-muted/40 p-4 text-sm text-muted-foreground">
+            <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">How this becomes your gift</p>
               <p className="mt-1">Share recipient, occasion, size, budget, deadline, and reference images. Giftra reviews the request, confirms the artist, and unlocks chat after payment.</p>
             </div>

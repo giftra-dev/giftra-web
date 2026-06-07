@@ -70,7 +70,7 @@ function ChatPageContent({ chatId }: { chatId: string }) {
     try {
       const { user } = await getCurrentUser()
       if (!user) {
-        router.push('/auth/login')
+        router.push('/auth/customer/login')
         return
       }
 

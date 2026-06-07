@@ -22,7 +22,7 @@ export function Header() {
           </Link>
         </nav>
         <div className="flex items-center gap-3">
-            <Link href="/auth/login" className="hidden items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-accent-foreground md:inline-flex">
+            <Link href="/auth/customer/login" className="hidden items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-accent-foreground md:inline-flex">
                 Log in
             </Link>
 

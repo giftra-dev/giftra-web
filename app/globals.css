@@ -3,32 +3,32 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Giftra atelier palette: paper, ink, coral, teal, and gold */
+/* Giftra gift-marketplace palette: warm paper, berry, sky, citrus, and ink */
 :root {
-  --background: oklch(0.985 0.012 38);
-  --foreground: oklch(0.22 0.035 265);
-  --card: oklch(0.998 0.006 38);
-  --card-foreground: oklch(0.22 0.035 265);
-  --popover: oklch(0.998 0.006 38);
-  --popover-foreground: oklch(0.22 0.035 265);
-  --primary: oklch(0.58 0.17 24);
-  --primary-foreground: oklch(0.99 0.006 38);
-  --secondary: oklch(0.88 0.075 188);
-  --secondary-foreground: oklch(0.21 0.045 210);
-  --muted: oklch(0.94 0.018 42);
-  --muted-foreground: oklch(0.48 0.035 265);
-  --accent: oklch(0.83 0.12 82);
-  --accent-foreground: oklch(0.24 0.038 265);
-  --destructive: oklch(0.55 0.22 27);
+  --background: oklch(0.985 0.01 57);
+  --foreground: oklch(0.2 0.035 255);
+  --card: oklch(1 0.004 57);
+  --card-foreground: oklch(0.2 0.035 255);
+  --popover: oklch(1 0.004 57);
+  --popover-foreground: oklch(0.2 0.035 255);
+  --primary: oklch(0.56 0.2 345);
+  --primary-foreground: oklch(0.99 0.006 57);
+  --secondary: oklch(0.9 0.08 205);
+  --secondary-foreground: oklch(0.22 0.055 245);
+  --muted: oklch(0.945 0.025 58);
+  --muted-foreground: oklch(0.47 0.04 255);
+  --accent: oklch(0.88 0.13 82);
+  --accent-foreground: oklch(0.2 0.035 255);
+  --destructive: oklch(0.56 0.22 24);
   --destructive-foreground: oklch(0.99 0.006 38);
-  --border: oklch(0.87 0.025 45);
-  --input: oklch(0.91 0.02 45);
-  --ring: oklch(0.58 0.17 24);
-  --chart-1: oklch(0.58 0.17 24);
-  --chart-2: oklch(0.62 0.12 190);
-  --chart-3: oklch(0.72 0.13 82);
-  --chart-4: oklch(0.54 0.13 285);
-  --chart-5: oklch(0.64 0.12 335);
+  --border: oklch(0.88 0.025 57);
+  --input: oklch(0.91 0.02 57);
+  --ring: oklch(0.56 0.2 345);
+  --chart-1: oklch(0.56 0.2 345);
+  --chart-2: oklch(0.66 0.13 205);
+  --chart-3: oklch(0.76 0.14 82);
+  --chart-4: oklch(0.61 0.15 282);
+  --chart-5: oklch(0.67 0.14 155);
   --radius: 0.625rem;
   --sidebar: oklch(0.27 0.07 210);
   --sidebar-foreground: oklch(0.97 0.015 42);
@@ -144,8 +144,8 @@
   body {
     @apply bg-background text-foreground;
     background-image:
-      linear-gradient(135deg, color-mix(in oklch, var(--primary) 7%, transparent), transparent 32rem),
-      linear-gradient(225deg, color-mix(in oklch, var(--secondary) 9%, transparent), transparent 28rem);
+      linear-gradient(180deg, color-mix(in oklch, var(--accent) 16%, transparent), transparent 22rem),
+      linear-gradient(135deg, color-mix(in oklch, var(--secondary) 18%, transparent), transparent 34rem);
   }
 
   ::selection {

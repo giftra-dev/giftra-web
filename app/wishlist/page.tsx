@@ -72,16 +72,16 @@ export default function WishlistPage() {
   }
 
   return (
-    <main className="min-h-screen bg-muted/30">
+    <main className="min-h-screen bg-background">
       <MarketplaceHeader wishlistCount={favorites.length} />
       <div className="container mx-auto px-4 py-6">
-        <section className="rounded-md border bg-card p-5">
+        <section className="rounded-lg border bg-card p-5 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
               <Heart className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">Wishlist</h1>
+              <h1 className="text-2xl font-bold">Saved gift ideas</h1>
               <p className="text-sm text-muted-foreground">
                 {isLoggedIn ? "Saved custom gift ideas are synced to your Giftra account." : "Saved custom gift ideas live in this browser until you sign in."}
               </p>
@@ -91,7 +91,7 @@ export default function WishlistPage() {
 
         <section className="py-5">
           {savedArtworks.length === 0 ? (
-            <div className="rounded-md border border-dashed bg-card p-10 text-center">
+            <div className="rounded-lg border border-dashed bg-card p-10 text-center shadow-sm">
               <p className="font-medium">Your wishlist is empty</p>
               <p className="mt-1 text-sm text-muted-foreground">Save artwork samples while browsing and come back when you are ready to request.</p>
               <Button asChild className="mt-5">

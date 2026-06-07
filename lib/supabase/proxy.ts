@@ -29,7 +29,7 @@ export async function updateSession(request: NextRequest) {
     }
 
     const url = request.nextUrl.clone()
-    url.pathname = '/auth/login'
+    url.pathname = '/auth/customer/login'
     url.searchParams.set('redirect', request.nextUrl.pathname)
     return NextResponse.redirect(url)
   }
@@ -63,7 +63,7 @@ export async function updateSession(request: NextRequest) {
 
   if (isProtectedPath && !user && !hasSupabaseAuthCookie(request)) {
     const url = request.nextUrl.clone()
-    url.pathname = '/auth/login'
+    url.pathname = '/auth/customer/login'
     url.searchParams.set('redirect', `${request.nextUrl.pathname}${request.nextUrl.search}`)
     return NextResponse.redirect(url)
   }

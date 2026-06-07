@@ -32,7 +32,6 @@ import {
 import type { ArtistArtworkWithArtist, GiftCategory, UserRole } from "@/lib/types/database"
 import { CATEGORY_LABELS } from "@/lib/types/database"
 import {
-  BadgeCheck,
   ChevronDown,
   CreditCard,
   Gift,
@@ -40,11 +39,9 @@ import {
   PackageCheck,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
   Sparkles,
   Star,
   Store,
-  Truck,
   UserRound,
 } from "lucide-react"
 
@@ -125,6 +122,27 @@ const explainerSlides = [
     description: "Artists showcase portfolio samples while customers request similar pieces tailored to occasion, recipient, budget, and deadline.",
   },
 ]
+const occasionFilters = [
+  { label: "Birthday", query: "birthday", tone: "bg-primary/10 text-primary" },
+  { label: "Wedding", query: "wedding", tone: "bg-secondary text-secondary-foreground" },
+  { label: "Anniversary", query: "anniversary", tone: "bg-accent text-accent-foreground" },
+  { label: "New baby", query: "baby", tone: "bg-info/10 text-info" },
+  { label: "Thank you", query: "thank you", tone: "bg-success/10 text-success" },
+  { label: "Corporate", query: "corporate", tone: "bg-muted text-foreground" },
+]
+const recipientFilters = [
+  "For her",
+  "For him",
+  "For couples",
+  "For kids",
+  "For parents",
+  "For friends",
+]
+const budgetFilters: Array<{ label: string; value: PriceFilter }> = [
+  { label: "Under $100", value: "under100" },
+  { label: "$100 - $250", value: "100to250" },
+  { label: "$250+", value: "250plus" },
+]
 
 function anonymousArtistName(artistId: string) {
   return `Artist ${artistId.slice(-4).toUpperCase()}`
@@ -162,27 +180,27 @@ function MarketplaceTile({
   const rating = getRating(artwork)
 
   return (
-    <article className="group overflow-hidden rounded-md border bg-card transition hover:border-primary/40 hover:shadow-sm">
-      <div className="relative aspect-square bg-muted">
+    <article className="group overflow-hidden rounded-lg border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+      <div className="relative aspect-[4/5] bg-muted">
         <Link href={`/artwork/${artwork.id}`} aria-label={`View ${artwork.title}`}>
-          <img src={artwork.image_url} alt="" className="h-full w-full object-cover transition group-hover:scale-[1.02]" />
+          <img src={artwork.image_url} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
         </Link>
         <Button
           type="button"
           size="icon"
           variant={isFavorite ? "default" : "secondary"}
-          className="absolute right-2 top-2 h-8 w-8"
+          className="absolute right-2 top-2 h-9 w-9 rounded-full shadow-sm"
           onClick={onFavorite}
           aria-label={isFavorite ? "Remove from wishlist" : "Add to wishlist"}
         >
           <Heart className={isFavorite ? "h-4 w-4 fill-current" : "h-4 w-4"} />
         </Button>
         {artwork.is_featured ? (
-          <Badge className="absolute left-2 top-2 h-6 rounded-sm px-2 text-[11px]">Featured</Badge>
+          <Badge className="absolute left-2 top-2 h-6 rounded-full px-2 text-[11px]">Giftra pick</Badge>
         ) : null}
       </div>
 
-      <div className="space-y-2 p-3">
+      <div className="space-y-2.5 p-3">
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <Link href={`/category/${artwork.category}`} className="truncate text-muted-foreground hover:text-primary">
             {CATEGORY_LABELS[artwork.category]}
@@ -193,7 +211,7 @@ function MarketplaceTile({
           </span>
         </div>
         <Link href={`/artwork/${artwork.id}`} className="block">
-          <h3 className="line-clamp-2 min-h-10 text-sm font-medium leading-5 hover:text-primary">
+          <h3 className="line-clamp-2 min-h-10 text-sm font-semibold leading-5 hover:text-primary">
             {artwork.title}
           </h3>
         </Link>
@@ -203,7 +221,7 @@ function MarketplaceTile({
         <div className="flex items-end justify-between gap-2">
           <div>
             <p className="text-base font-bold">{formatPrice(artwork)}</p>
-            <p className="text-[11px] text-muted-foreground">Custom order</p>
+            <p className="text-[11px] text-muted-foreground">Made to order</p>
           </div>
           {isLoggedIn ? (
             <Button size="sm" className="h-8 px-2 text-xs" onClick={onRequest}>
@@ -211,7 +229,7 @@ function MarketplaceTile({
             </Button>
           ) : (
             <Button asChild size="sm" className="h-8 px-2 text-xs">
-              <Link href={`/auth/signup?role=customer&next=/artwork/${artwork.id}?request=1`}>Request</Link>
+              <Link href={`/auth/customer/signup?next=/artwork/${artwork.id}?request=1`}>Request</Link>
             </Button>
           )}
         </div>
@@ -373,8 +391,11 @@ export function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 border-b bg-card shadow-sm">
+        <div className="bg-primary px-4 py-2 text-center text-xs font-semibold text-primary-foreground">
+          Personalised gifts, artist-made and request-ready
+        </div>
         <div className="container mx-auto flex min-h-16 flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center">
           <div className="flex items-center justify-between gap-3">
             <Link href="/" className="flex items-center gap-2">
@@ -383,7 +404,7 @@ export function LandingPage() {
               </div>
               <span className="text-xl font-bold">Giftra</span>
             </Link>
-            <Button asChild variant="outline" size="sm" className="lg:hidden">
+            <Button asChild variant="secondary" size="sm" className="lg:hidden">
               <Link href="#artworks">Browse</Link>
             </Button>
           </div>
@@ -430,13 +451,13 @@ export function LandingPage() {
             ) : (
               <>
                 <Button asChild variant="ghost" size="sm">
-                  <Link href="/auth/signup?role=artist">
+                  <Link href="/auth/artist/login">
                     <Store className="mr-2 h-4 w-4" />
-                    Sell
+                    Become an artist
                   </Link>
                 </Button>
                 <Button asChild variant="ghost" size="sm">
-                  <Link href="/auth/login">
+                  <Link href="/auth/customer/login">
                     <UserRound className="mr-2 h-4 w-4" />
                     Sign In
                   </Link>
@@ -454,6 +475,17 @@ export function LandingPage() {
 
         <div className="border-t bg-background">
           <div className="container mx-auto flex gap-2 overflow-x-auto px-4 py-2">
+            {["Occasions", "Recipients", "Personalised", "New in", "Top rated"].map((item) => (
+              <Button
+                key={item}
+                asChild
+                size="sm"
+                variant="ghost"
+                className="h-8 shrink-0"
+              >
+                <Link href={item === "Top rated" ? "#top-rated" : "#gift-finder"}>{item}</Link>
+              </Button>
+            ))}
             <Button
               type="button"
               size="sm"
@@ -481,63 +513,27 @@ export function LandingPage() {
 
       <main>
         <section className="border-b bg-background">
-          <div className="container mx-auto grid gap-4 px-4 py-4 lg:grid-cols-[220px_1fr_260px]">
-            <aside className="hidden rounded-md border bg-card p-3 lg:block">
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                <SlidersHorizontal className="h-4 w-4" />
-                Shop by Category
-              </div>
-              <div className="space-y-1">
-                {categoryEntries.map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setCategory(value)}
-                    className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
-                  >
-                    <span>{label}</span>
-                    <span className="text-xs text-muted-foreground">{categoryCounts[value] || 0}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="mt-5 border-t pt-4">
-                <div className="mb-2 text-sm font-semibold">Featured Artists</div>
-                <div className="space-y-1">
-                  {artistOptions.slice(0, 6).map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setArtist(option.id)}
-                      className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
-                    >
-                      <span className="truncate">{option.name}</span>
-                      <span className="shrink-0 text-xs text-muted-foreground">{option.count}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </aside>
-
+          <div className="container mx-auto grid gap-5 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_300px]">
             <Carousel opts={{ align: "start", loop: true }} className="min-w-0">
               <CarouselContent>
                 {explainerSlides.map((slide, index) => {
                   const artwork = featured[index % Math.max(featured.length, 1)]
                   return (
                     <CarouselItem key={slide.title}>
-                      <div className="grid min-h-[340px] overflow-hidden rounded-md border bg-card md:grid-cols-[1.05fr_0.95fr]">
-                      <div className="flex flex-col justify-between gap-4 p-6">
+                      <div className="grid min-h-[390px] overflow-hidden rounded-lg border bg-card shadow-sm md:grid-cols-[1fr_0.9fr]">
+                      <div className="flex flex-col justify-between gap-4 p-7 lg:p-9">
                         <div>
-                          <Badge className="mb-3 rounded-sm">{slide.label}</Badge>
-                          <h1 className="max-w-xl text-3xl font-bold leading-tight md:text-4xl">
+                          <Badge className="mb-4 rounded-full bg-accent text-accent-foreground">{slide.label}</Badge>
+                          <h1 className="max-w-xl text-4xl font-bold leading-tight md:text-5xl">
                             {slide.title}
                           </h1>
-                          <p className="mt-3 max-w-xl text-sm text-muted-foreground md:text-base">
+                          <p className="mt-4 max-w-xl text-base text-muted-foreground">
                             {slide.description}
                           </p>
-                          <div className="mt-5 grid max-w-lg gap-2 text-sm text-muted-foreground sm:grid-cols-3">
-                            <span className="rounded-md bg-muted px-3 py-2">Browse samples</span>
-                            <span className="rounded-md bg-muted px-3 py-2">Save favorites</span>
-                            <span className="rounded-md bg-muted px-3 py-2">Raise request</span>
+                          <div className="mt-6 grid max-w-lg gap-2 text-sm sm:grid-cols-3">
+                            <span className="rounded-full bg-primary/10 px-3 py-2 text-primary">Browse samples</span>
+                            <span className="rounded-full bg-secondary px-3 py-2 text-secondary-foreground">Save favorites</span>
+                            <span className="rounded-full bg-muted px-3 py-2 text-foreground">Raise request</span>
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -552,13 +548,19 @@ export function LandingPage() {
                               <Link href={`/artists/${artwork.artist_id}`}>View sample artist</Link>
                             </Button>
                           ) : null}
+                          <Button asChild variant="secondary">
+                            <Link href="/auth/artist/login">
+                              <Store className="mr-2 h-4 w-4" />
+                              Become an artist
+                            </Link>
+                          </Button>
                         </div>
                       </div>
-                      <div className="relative min-h-[220px] bg-muted">
+                      <div className="relative min-h-[260px] bg-muted">
                         {artwork ? (
                           <>
                             <img src={artwork.image_url} alt="" className="h-full w-full object-cover" />
-                            <div className="absolute bottom-3 left-3 right-3 rounded-md bg-background/95 p-3 shadow-sm">
+                            <div className="absolute bottom-4 left-4 right-4 rounded-lg bg-background/95 p-4 shadow-sm">
                               <p className="line-clamp-1 text-sm font-semibold">{artwork.title}</p>
                               <p className="text-xs text-muted-foreground">
                                 {formatPrice(artwork)} - {CATEGORY_LABELS[artwork.category]} - {anonymousArtistName(artwork.artist_id)}
@@ -580,21 +582,47 @@ export function LandingPage() {
               <CarouselNext className="right-2" />
             </Carousel>
 
-            <aside className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-              <div className="rounded-md border bg-card p-4">
+            <aside id="gift-finder" className="grid gap-3">
+              <div className="rounded-lg border bg-card p-5 shadow-sm">
+                <p className="text-sm font-semibold">Find gifts by occasion</p>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  {occasionFilters.map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      className={`rounded-full px-3 py-2 text-sm font-medium ${item.tone}`}
+                      onClick={() => {
+                        setSearch(item.query)
+                        document.getElementById("artworks")?.scrollIntoView({ behavior: "smooth" })
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-card p-5 shadow-sm">
+                <p className="text-sm font-semibold">Shop by budget</p>
+                <div className="mt-4 grid gap-2">
+                  {budgetFilters.map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      className="rounded-md border px-3 py-2 text-left text-sm hover:bg-muted"
+                      onClick={() => {
+                        setPrice(item.value)
+                        document.getElementById("artworks")?.scrollIntoView({ behavior: "smooth" })
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-card p-4 shadow-sm">
                 <ShieldCheck className="mb-3 h-5 w-5 text-primary" />
                 <p className="text-sm font-semibold">Protected ordering</p>
                 <p className="mt-1 text-xs text-muted-foreground">Payment and chat unlock after approved workflow.</p>
-              </div>
-              <div className="rounded-md border bg-card p-4">
-                <BadgeCheck className="mb-3 h-5 w-5 text-primary" />
-                <p className="text-sm font-semibold">Anonymous browsing</p>
-                <p className="mt-1 text-xs text-muted-foreground">Explore artists without logging in first.</p>
-              </div>
-              <div className="rounded-md border bg-card p-4">
-                <Truck className="mb-3 h-5 w-5 text-primary" />
-                <p className="text-sm font-semibold">Made to order</p>
-                <p className="mt-1 text-xs text-muted-foreground">Every listing becomes a custom request.</p>
               </div>
             </aside>
           </div>
@@ -625,7 +653,75 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section className="container mx-auto px-4 py-5">
+        <section className="container mx-auto px-4 py-8">
+          <div className="mb-4 flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold">Shop thoughtful gifts your way</h2>
+              <p className="text-sm text-muted-foreground">Start with recipient, occasion, category, or budget.</p>
+            </div>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="#artworks">All gifts</Link>
+            </Button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-lg border bg-secondary p-5 text-secondary-foreground">
+              <p className="text-sm font-semibold">By recipient</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {recipientFilters.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    className="rounded-full bg-background/70 px-3 py-2 text-sm text-foreground hover:bg-background"
+                    onClick={() => {
+                      setSearch(item)
+                      document.getElementById("artworks")?.scrollIntoView({ behavior: "smooth" })
+                    }}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-lg border bg-accent p-5 text-accent-foreground">
+              <p className="text-sm font-semibold">By category</p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {categoryEntries.slice(0, 6).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className="rounded-md bg-background/75 px-3 py-2 text-left text-sm text-foreground hover:bg-background"
+                    onClick={() => {
+                      setCategory(value)
+                      document.getElementById("artworks")?.scrollIntoView({ behavior: "smooth" })
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-lg border bg-primary p-5 text-primary-foreground">
+              <p className="text-sm font-semibold">By artist</p>
+              <div className="mt-4 grid gap-2">
+                {artistOptions.slice(0, 4).map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className="rounded-md bg-background/15 px-3 py-2 text-left text-sm hover:bg-background/25"
+                    onClick={() => {
+                      setArtist(option.id)
+                      document.getElementById("artworks")?.scrollIntoView({ behavior: "smooth" })
+                    }}
+                  >
+                    {option.name} · {option.count} gifts
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="top-rated" className="container mx-auto px-4 py-5">
           <div className="mb-3 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold">Top-rated custom gifts</h2>
@@ -657,12 +753,30 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section id="artworks" className="container mx-auto px-4 pb-10">
-          <div className="rounded-md border bg-card">
-            <div className="border-b p-4">
+        <section className="border-y bg-card">
+          <div className="container mx-auto grid gap-4 px-4 py-8 md:grid-cols-4">
+            {[
+              ["1", "Choose a sample", "Browse artwork and save styles you love."],
+              ["2", "Share the brief", "Add recipient, occasion, budget, and references."],
+              ["3", "Approve quote", "Giftra reviews the request and confirms the artist."],
+              ["4", "Track delivery", "Chat, preview, revisions, delivery, and review."],
+            ].map(([step, title, text]) => (
+              <div key={step} className="rounded-lg border bg-background p-4">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">{step}</span>
+                <p className="mt-4 font-semibold">{title}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{text}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section id="artworks" className="container mx-auto px-4 py-10">
+          <div className="rounded-lg border bg-card shadow-sm">
+            <div className="border-b p-5">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h2 className="text-xl font-bold">All custom gift listings</h2>
+                  <Badge variant="secondary" className="mb-2 rounded-full">Marketplace</Badge>
+                  <h2 className="text-2xl font-bold">All personalised gift listings</h2>
                   <p className="text-sm text-muted-foreground">
                     {isLoading ? "Loading marketplace..." : `${filteredArtworks.length} results from ${artworks.length} listings`}
                   </p>
@@ -729,9 +843,9 @@ export function LandingPage() {
               </div>
             </div>
 
-            <div className="p-4">
+            <div className="p-4 md:p-5">
               {isLoading ? (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                   {Array.from({ length: 18 }).map((_, index) => (
                     <div key={index} className="rounded-md border bg-background p-2">
                       <Skeleton className="aspect-square w-full" />
@@ -749,7 +863,7 @@ export function LandingPage() {
                   <Button variant="outline" className="mt-4" onClick={clearFilters}>Clear filters</Button>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                   {filteredArtworks.map((artwork) => (
                     <MarketplaceTile
                       key={artwork.id}
