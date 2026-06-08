@@ -13,7 +13,9 @@ import {
   DollarSign,
   ArrowRight,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  Images,
+  LifeBuoy,
 } from "lucide-react"
 import { 
   getAllRequests,
@@ -46,6 +48,8 @@ function AdminDashboardContent() {
     totalUsers: 0,
     totalArtists: 0,
     totalCustomers: 0,
+    pendingArtworks: 0,
+    openSupportConversations: 0,
   })
   const [isLoading, setIsLoading] = useState(true)
 
@@ -119,7 +123,7 @@ function AdminDashboardContent() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -174,6 +178,34 @@ function AdminDashboardContent() {
             <p className="text-xs text-muted-foreground mt-1">
               15% platform fee
             </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Artwork Review
+            </CardTitle>
+            <Images className="w-4 h-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.pendingArtworks}</div>
+            <Link href="/admin/artworks" className="mt-1 block text-xs text-primary hover:underline">
+              Pending approvals
+            </Link>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Support
+            </CardTitle>
+            <LifeBuoy className="w-4 h-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.openSupportConversations}</div>
+            <Link href="/admin/support" className="mt-1 block text-xs text-primary hover:underline">
+              Open conversations
+            </Link>
           </CardContent>
         </Card>
       </div>

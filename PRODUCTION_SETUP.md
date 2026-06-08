@@ -28,6 +28,9 @@ The reset deletes Giftra tables in the `public` schema. It does not delete `auth
    - `messages`
    - `orders`
    - `reviews`
+   - `support_conversations`
+   - `support_messages`
+   - `artwork_feedback`
    - `wishlist_items`
    - `reports`
    - `payment_events`
@@ -39,8 +42,12 @@ The schema also creates:
 - `artist-artworks`, `reference-images`, and `order-artwork` storage buckets.
 - RLS policies for customer, artist, and admin flows.
 - Realtime for `requests`, `chat_rooms`, `messages`, `orders`, and `notifications`.
-- RPCs for assignment, payment unlock, order status transitions, and chat messages.
+- Realtime for support conversations/messages, reports, payment events, and artwork feedback.
+- RPCs for assignment, payment unlock, order status transitions, chat messages, and artist testimonial selection.
 - Persistent wishlist, listing reports, and payment event records.
+- Admin artwork approval before artist uploads appear publicly.
+- Direct customer/admin support chat from the floating website widget.
+- Searchable artist-added artwork tags, backed by a GIN index on `artist_artworks.tags`.
 
 Do not run the old `production-workflow.sql` unless you intentionally want to maintain a separate legacy workflow. The regenerated `schema.sql` includes the current workflow support.
 
@@ -59,6 +66,7 @@ It creates:
 - 12 sample customers
 - 150 sample artworks across all gift categories
 - 90 completed orders and reviews
+- Approved public artwork records with multiple sample images
 
 Demo password for seeded users:
 
@@ -181,7 +189,12 @@ The schema attempts to add these tables to `supabase_realtime`:
 - `requests`
 - `chat_rooms`
 - `messages`
+- `support_conversations`
+- `support_messages`
 - `orders`
+- `artwork_feedback`
+- `reports`
+- `payment_events`
 - `notifications`
 
 Verify in **Supabase Dashboard > Database > Replication** that realtime is enabled for those tables.
@@ -205,6 +218,10 @@ order-artwork/{artist_or_customer_user_id}/filename.jpg
 ```
 
 The storage policies depend on the first folder segment matching the authenticated user id.
+
+Artist portfolio uploads now default to `approval_status = pending` and `is_public = false`. Admins must approve them in **Admin > Artwork Review** before they appear on the marketplace or artist portfolio.
+
+Artists can add comma-separated tags when uploading portfolio samples. These tags are searchable from the homepage and category pages, and the homepage shows popular tag chips generated from approved listings.
 
 ## 11. Payments
 
@@ -258,6 +275,19 @@ Install dependencies:
 ```bash
 pnpm install
 ```
+
+Use Node.js 20.9 or newer for local builds and Vercel, because Next 16 and the current Supabase packages require Node 20+.
+
+The UI now includes Material UI packages:
+
+```text
+@mui/material
+@mui/icons-material
+@emotion/react
+@emotion/styled
+```
+
+After pulling these changes, run `pnpm install` so `pnpm-lock.yaml` is updated with the MUI dependencies.
 
 Run locally:
 

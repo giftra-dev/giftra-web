@@ -38,7 +38,6 @@ interface CreateRequestDialogProps {
   initialCategory?: GiftCategory
   initialBudgetMin?: number
   initialBudgetMax?: number
-  preferredArtistId?: string
   inspirationArtworkId?: string
 }
 
@@ -51,7 +50,6 @@ export function CreateRequestDialog({
   initialCategory,
   initialBudgetMin,
   initialBudgetMax,
-  preferredArtistId,
   inspirationArtworkId,
 }: CreateRequestDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
@@ -129,7 +127,6 @@ export function CreateRequestDialog({
         budget_max: maxBudget,
         deadline: deadline || undefined,
         reference_images: referenceImages.filter((url): url is string => Boolean(url)),
-        preferred_artist_id: preferredArtistId,
         inspiration_artwork_id: inspirationArtworkId,
       })
 
@@ -141,7 +138,12 @@ export function CreateRequestDialog({
       resetForm()
       onSuccess?.()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create request.")
+      const message = err instanceof Error ? err.message : "Unable to create request."
+      setError(
+        message.includes("foreign key constraint")
+          ? "This artwork or artist is no longer available. Please refresh the page and choose another listing."
+          : message
+      )
     } finally {
       setIsLoading(false)
     }

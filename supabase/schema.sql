@@ -25,12 +25,18 @@ DROP FUNCTION IF EXISTS public.assign_artist_and_price(UUID, UUID, NUMERIC, TEXT
 DROP FUNCTION IF EXISTS public.record_payment_and_unlock_chat(UUID, TEXT, NUMERIC) CASCADE;
 DROP FUNCTION IF EXISTS public.transition_order(UUID, TEXT) CASCADE;
 DROP FUNCTION IF EXISTS public.send_chat_message(UUID, TEXT, TEXT, JSONB) CASCADE;
+DROP FUNCTION IF EXISTS public.set_artwork_feedback_testimonial(UUID, BOOLEAN) CASCADE;
+DROP FUNCTION IF EXISTS public.protect_artwork_feedback_update() CASCADE;
+DROP FUNCTION IF EXISTS public.set_support_message_admin_flag() CASCADE;
 
 DROP TABLE IF EXISTS public.activity_log CASCADE;
 DROP TABLE IF EXISTS public.notifications CASCADE;
 DROP TABLE IF EXISTS public.payment_events CASCADE;
 DROP TABLE IF EXISTS public.reports CASCADE;
 DROP TABLE IF EXISTS public.wishlist_items CASCADE;
+DROP TABLE IF EXISTS public.artwork_feedback CASCADE;
+DROP TABLE IF EXISTS public.support_messages CASCADE;
+DROP TABLE IF EXISTS public.support_conversations CASCADE;
 DROP TABLE IF EXISTS public.reviews CASCADE;
 DROP TABLE IF EXISTS public.orders CASCADE;
 DROP TABLE IF EXISTS public.messages CASCADE;
@@ -128,11 +134,16 @@ CREATE TABLE public.artist_artworks (
   description TEXT,
   category public.gift_category NOT NULL,
   image_url TEXT NOT NULL,
+  image_urls TEXT[] NOT NULL DEFAULT '{}',
   price_min NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (price_min >= 0),
   price_max NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (price_max >= price_min),
   tags TEXT[] NOT NULL DEFAULT '{}',
   is_featured BOOLEAN NOT NULL DEFAULT FALSE,
-  is_public BOOLEAN NOT NULL DEFAULT TRUE,
+  is_public BOOLEAN NOT NULL DEFAULT FALSE,
+  approval_status TEXT NOT NULL DEFAULT 'pending' CHECK (approval_status IN ('pending', 'approved', 'rejected')),
+  approval_notes TEXT,
+  approved_by_admin_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  approved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -141,7 +152,6 @@ CREATE TABLE public.requests (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   assigned_artist_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-  preferred_artist_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   inspiration_artwork_id UUID REFERENCES public.artist_artworks(id) ON DELETE SET NULL,
   approved_by_admin_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   title TEXT NOT NULL,
@@ -224,6 +234,40 @@ CREATE TABLE public.reviews (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE public.support_conversations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL DEFAULT 'Customer support',
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  last_message_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE public.support_messages (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  conversation_id UUID NOT NULL REFERENCES public.support_conversations(id) ON DELETE CASCADE,
+  sender_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  message TEXT NOT NULL,
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE public.artwork_feedback (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  artwork_id UUID NOT NULL REFERENCES public.artist_artworks(id) ON DELETE CASCADE,
+  artist_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  title TEXT,
+  content TEXT,
+  show_as_testimonial BOOLEAN NOT NULL DEFAULT FALSE,
+  is_visible BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (customer_id, artwork_id)
+);
+
 CREATE TABLE public.wishlist_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -291,7 +335,9 @@ CREATE INDEX profiles_role_idx ON public.profiles(role);
 CREATE INDEX profiles_artist_available_idx ON public.profiles(role, is_available) WHERE role = 'artist';
 CREATE INDEX artist_artworks_artist_idx ON public.artist_artworks(artist_id);
 CREATE INDEX artist_artworks_category_idx ON public.artist_artworks(category);
+CREATE INDEX artist_artworks_tags_gin_idx ON public.artist_artworks USING GIN(tags);
 CREATE INDEX artist_artworks_public_featured_idx ON public.artist_artworks(is_public, is_featured);
+CREATE INDEX artist_artworks_approval_idx ON public.artist_artworks(approval_status, created_at DESC);
 CREATE INDEX requests_customer_idx ON public.requests(customer_id);
 CREATE INDEX requests_artist_idx ON public.requests(assigned_artist_id);
 CREATE INDEX requests_status_idx ON public.requests(status);
@@ -302,6 +348,10 @@ CREATE INDEX orders_customer_idx ON public.orders(customer_id);
 CREATE INDEX orders_artist_idx ON public.orders(artist_id);
 CREATE INDEX orders_status_idx ON public.orders(status);
 CREATE INDEX reviews_artist_idx ON public.reviews(artist_id);
+CREATE INDEX support_conversations_customer_idx ON public.support_conversations(customer_id, status, last_message_at DESC);
+CREATE INDEX support_messages_conversation_idx ON public.support_messages(conversation_id, created_at ASC);
+CREATE INDEX artwork_feedback_artwork_idx ON public.artwork_feedback(artwork_id, created_at DESC);
+CREATE INDEX artwork_feedback_artist_idx ON public.artwork_feedback(artist_id, show_as_testimonial, created_at DESC);
 CREATE INDEX wishlist_items_user_idx ON public.wishlist_items(user_id, created_at DESC);
 CREATE INDEX wishlist_items_artwork_idx ON public.wishlist_items(artwork_id);
 CREATE INDEX reports_status_idx ON public.reports(status, created_at DESC);
@@ -346,6 +396,14 @@ FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 CREATE TRIGGER set_reports_updated_at
 BEFORE UPDATE ON public.reports
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER set_support_conversations_updated_at
+BEFORE UPDATE ON public.support_conversations
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER set_artwork_feedback_updated_at
+BEFORE UPDATE ON public.artwork_feedback
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -411,13 +469,29 @@ BEGIN
   SET
     rating = COALESCE((
       SELECT ROUND(AVG(rating)::NUMERIC, 2)
-      FROM public.reviews
-      WHERE artist_id = p_artist_id
+      FROM (
+        SELECT rating
+        FROM public.reviews
+        WHERE artist_id = p_artist_id
+        UNION ALL
+        SELECT rating
+        FROM public.artwork_feedback
+        WHERE artist_id = p_artist_id
+          AND is_visible = TRUE
+      ) combined_ratings
     ), 0),
     total_reviews = (
       SELECT COUNT(*)::INTEGER
-      FROM public.reviews
-      WHERE artist_id = p_artist_id
+      FROM (
+        SELECT id
+        FROM public.reviews
+        WHERE artist_id = p_artist_id
+        UNION ALL
+        SELECT id
+        FROM public.artwork_feedback
+        WHERE artist_id = p_artist_id
+          AND is_visible = TRUE
+      ) combined_reviews
     ),
     updated_at = NOW()
   WHERE id = p_artist_id
@@ -451,6 +525,10 @@ CREATE TRIGGER reviews_refresh_artist_rating
 AFTER INSERT OR UPDATE OR DELETE ON public.reviews
 FOR EACH ROW EXECUTE FUNCTION public.recalculate_artist_rating();
 
+CREATE TRIGGER artwork_feedback_refresh_artist_rating
+AFTER INSERT OR UPDATE OR DELETE ON public.artwork_feedback
+FOR EACH ROW EXECUTE FUNCTION public.recalculate_artist_rating();
+
 CREATE OR REPLACE FUNCTION public.touch_chat_room_last_message()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -469,6 +547,99 @@ $$;
 CREATE TRIGGER messages_touch_chat_room
 AFTER INSERT ON public.messages
 FOR EACH ROW EXECUTE FUNCTION public.touch_chat_room_last_message();
+
+CREATE OR REPLACE FUNCTION public.touch_support_conversation_last_message()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE public.support_conversations
+  SET last_message_at = NEW.created_at
+  WHERE id = NEW.conversation_id;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER support_messages_touch_conversation
+AFTER INSERT ON public.support_messages
+FOR EACH ROW EXECUTE FUNCTION public.touch_support_conversation_last_message();
+
+CREATE OR REPLACE FUNCTION public.set_support_message_admin_flag()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  NEW.is_admin = public.is_admin();
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER set_support_message_admin_flag
+BEFORE INSERT ON public.support_messages
+FOR EACH ROW EXECUTE FUNCTION public.set_support_message_admin_flag();
+
+CREATE OR REPLACE FUNCTION public.protect_artwork_feedback_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF public.is_admin() THEN
+    RETURN NEW;
+  END IF;
+
+  IF auth.uid() = OLD.customer_id THEN
+    NEW.artwork_id = OLD.artwork_id;
+    NEW.artist_id = OLD.artist_id;
+    NEW.customer_id = OLD.customer_id;
+    NEW.show_as_testimonial = OLD.show_as_testimonial;
+    NEW.is_visible = OLD.is_visible;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER protect_artwork_feedback_update
+BEFORE UPDATE ON public.artwork_feedback
+FOR EACH ROW EXECUTE FUNCTION public.protect_artwork_feedback_update();
+
+CREATE OR REPLACE FUNCTION public.set_artwork_feedback_testimonial(
+  p_feedback_id UUID,
+  p_show_as_testimonial BOOLEAN
+)
+RETURNS public.artwork_feedback
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_feedback public.artwork_feedback;
+BEGIN
+  SELECT * INTO v_feedback
+  FROM public.artwork_feedback
+  WHERE id = p_feedback_id
+    AND (artist_id = auth.uid() OR public.is_admin())
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Feedback not found or not owned by this artist';
+  END IF;
+
+  UPDATE public.artwork_feedback
+  SET show_as_testimonial = p_show_as_testimonial
+  WHERE id = p_feedback_id
+  RETURNING * INTO v_feedback;
+
+  RETURN v_feedback;
+END;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Production workflow RPCs used by the app/server helpers
@@ -717,6 +888,9 @@ ALTER TABLE public.chat_rooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.support_conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.support_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.artwork_feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wishlist_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payment_events ENABLE ROW LEVEL SECURITY;
@@ -738,19 +912,37 @@ WITH CHECK (auth.uid() = id OR public.is_admin());
 
 CREATE POLICY "Public artworks are readable"
 ON public.artist_artworks FOR SELECT
-USING (is_public = TRUE OR auth.uid() = artist_id OR public.is_admin());
+USING ((is_public = TRUE AND approval_status = 'approved') OR auth.uid() = artist_id OR public.is_admin());
 
-CREATE POLICY "Artists manage own artworks"
-ON public.artist_artworks FOR ALL
+CREATE POLICY "Artists create own pending artworks"
+ON public.artist_artworks FOR INSERT
+WITH CHECK (
+  auth.uid() = artist_id
+  AND approval_status = 'pending'
+  AND is_public = FALSE
+);
+
+CREATE POLICY "Artists update own unapproved artworks"
+ON public.artist_artworks FOR UPDATE
 USING (auth.uid() = artist_id OR public.is_admin())
-WITH CHECK (auth.uid() = artist_id OR public.is_admin());
+WITH CHECK (
+  public.is_admin()
+  OR (
+    auth.uid() = artist_id
+    AND approval_status <> 'approved'
+    AND is_public = FALSE
+  )
+);
+
+CREATE POLICY "Artists delete own artworks"
+ON public.artist_artworks FOR DELETE
+USING (auth.uid() = artist_id OR public.is_admin());
 
 CREATE POLICY "Request participants can read"
 ON public.requests FOR SELECT
 USING (
   auth.uid() = customer_id
   OR auth.uid() = assigned_artist_id
-  OR auth.uid() = preferred_artist_id
   OR public.is_admin()
 );
 
@@ -888,6 +1080,69 @@ CREATE POLICY "Customers update own reviews"
 ON public.reviews FOR UPDATE
 USING (auth.uid() = customer_id OR auth.uid() = artist_id OR public.is_admin())
 WITH CHECK (auth.uid() = customer_id OR auth.uid() = artist_id OR public.is_admin());
+
+CREATE POLICY "Support participants read conversations"
+ON public.support_conversations FOR SELECT
+USING (auth.uid() = customer_id OR public.is_admin());
+
+CREATE POLICY "Customers create support conversations"
+ON public.support_conversations FOR INSERT
+WITH CHECK (auth.uid() = customer_id);
+
+CREATE POLICY "Support participants update conversations"
+ON public.support_conversations FOR UPDATE
+USING (auth.uid() = customer_id OR public.is_admin())
+WITH CHECK (auth.uid() = customer_id OR public.is_admin());
+
+CREATE POLICY "Support participants read messages"
+ON public.support_messages FOR SELECT
+USING (
+  public.is_admin()
+  OR EXISTS (
+    SELECT 1
+    FROM public.support_conversations sc
+    WHERE sc.id = conversation_id
+      AND sc.customer_id = auth.uid()
+  )
+);
+
+CREATE POLICY "Support participants send messages"
+ON public.support_messages FOR INSERT
+WITH CHECK (
+  auth.uid() = sender_id
+  AND (
+    public.is_admin()
+    OR EXISTS (
+      SELECT 1
+      FROM public.support_conversations sc
+      WHERE sc.id = conversation_id
+        AND sc.customer_id = auth.uid()
+    )
+  )
+);
+
+CREATE POLICY "Visible artwork feedback is readable"
+ON public.artwork_feedback FOR SELECT
+USING (is_visible = TRUE OR auth.uid() = customer_id OR auth.uid() = artist_id OR public.is_admin());
+
+CREATE POLICY "Customers create artwork feedback"
+ON public.artwork_feedback FOR INSERT
+WITH CHECK (
+  auth.uid() = customer_id
+  AND EXISTS (
+    SELECT 1
+    FROM public.artist_artworks aa
+    WHERE aa.id = artwork_id
+      AND aa.artist_id = artist_id
+      AND aa.approval_status = 'approved'
+      AND aa.is_public = TRUE
+  )
+);
+
+CREATE POLICY "Customers and admins update feedback"
+ON public.artwork_feedback FOR UPDATE
+USING (auth.uid() = customer_id OR public.is_admin())
+WITH CHECK (auth.uid() = customer_id OR public.is_admin());
 
 CREATE POLICY "Users manage own wishlist"
 ON public.wishlist_items FOR ALL
@@ -1029,7 +1284,10 @@ BEGIN
     'requests',
     'chat_rooms',
     'messages',
+    'support_conversations',
+    'support_messages',
     'orders',
+    'artwork_feedback',
     'reports',
     'payment_events',
     'notifications'

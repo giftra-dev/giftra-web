@@ -27,7 +27,9 @@ import {
   Users,
   History,
   UserCheck,
-  Flag
+  Flag,
+  Images,
+  LifeBuoy
 } from "lucide-react"
 import { OrderHistoryModal } from "@/components/order-history-modal"
 import { cn } from "@/lib/utils"
@@ -62,7 +64,9 @@ const roleNavItems: Record<UserRole, { href: string; label: string; icon: React.
     { href: "/admin/orders", label: "Orders", icon: Package },
     { href: "/admin/users", label: "Users", icon: Users },
     { href: "/admin/artists", label: "Artists", icon: UserCheck },
+    { href: "/admin/artworks", label: "Artwork Review", icon: Images },
     { href: "/admin/reports", label: "Reports", icon: Flag },
+    { href: "/admin/support", label: "Support Inbox", icon: LifeBuoy },
     { href: "/admin/chats", label: "Chat Monitor", icon: MessageSquare },
   ],
 }

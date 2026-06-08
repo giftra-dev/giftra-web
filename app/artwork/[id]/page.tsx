@@ -9,6 +9,7 @@ import { anonymousArtistName, formatArtworkPrice, getArtworkRating, readWishlist
 import { CreateRequestDialog } from "@/components/create-request-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -21,6 +22,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import {
   getCurrentUser,
+  createArtworkFeedback,
+  getArtworkFeedback,
   getPublicArtworkById,
   getPublicArtworks,
   getWishlistArtworkIds,
@@ -28,7 +31,7 @@ import {
   syncWishlistItems,
   toggleWishlistItem,
 } from "@/lib/supabase/queries"
-import type { ArtistArtworkWithArtist, GiftCategory } from "@/lib/types/database"
+import type { ArtistArtworkWithArtist, ArtworkFeedbackWithRelations, GiftCategory } from "@/lib/types/database"
 import { CATEGORY_LABELS } from "@/lib/types/database"
 import { ArrowLeft, BadgeCheck, Flag, Heart, ShieldCheck, Star, Truck } from "lucide-react"
 
@@ -46,6 +49,12 @@ export default function ArtworkDetailPage() {
   const [reportDetails, setReportDetails] = useState("")
   const [reportMessage, setReportMessage] = useState("")
   const [isReporting, setIsReporting] = useState(false)
+  const [feedback, setFeedback] = useState<ArtworkFeedbackWithRelations[]>([])
+  const [feedbackRating, setFeedbackRating] = useState(5)
+  const [feedbackTitle, setFeedbackTitle] = useState("")
+  const [feedbackContent, setFeedbackContent] = useState("")
+  const [feedbackMessage, setFeedbackMessage] = useState("")
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
 
   useEffect(() => {
     async function loadArtwork() {
@@ -69,6 +78,7 @@ export default function ArtworkDetailPage() {
       }
 
       setArtwork(item)
+      setFeedback(item ? await getArtworkFeedback(item.id) : [])
       setIsLoggedIn(Boolean(userData.user))
       setRelated(items.filter((candidate) => candidate.id !== params.id && candidate.category === item?.category).slice(0, 6))
       setIsLoading(false)
@@ -127,6 +137,36 @@ export default function ArtworkDetailPage() {
     setReportDetails("")
   }
 
+  const handleFeedback = async () => {
+    if (!artwork) return
+
+    if (!isLoggedIn) {
+      window.location.href = `/auth/customer/login?redirect=/artwork/${artwork.id}`
+      return
+    }
+
+    setIsSubmittingFeedback(true)
+    setFeedbackMessage("")
+    const { error } = await createArtworkFeedback({
+      artwork_id: artwork.id,
+      artist_id: artwork.artist_id,
+      rating: feedbackRating,
+      title: feedbackTitle || undefined,
+      content: feedbackContent || undefined,
+    })
+    setIsSubmittingFeedback(false)
+
+    if (error) {
+      setFeedbackMessage(error.message)
+      return
+    }
+
+    setFeedbackMessage("Thanks. Your feedback has been saved.")
+    setFeedbackTitle("")
+    setFeedbackContent("")
+    setFeedback(await getArtworkFeedback(artwork.id))
+  }
+
   const tags = useMemo(() => artwork?.tags?.filter(Boolean).slice(0, 8) || [], [artwork])
 
   if (isLoading) {
@@ -173,8 +213,19 @@ export default function ArtworkDetailPage() {
         </Button>
 
         <section className="grid gap-6 rounded-lg border bg-card p-4 shadow-sm lg:grid-cols-[1fr_420px]">
-          <div className="overflow-hidden rounded-lg bg-muted">
-            <img src={artwork.image_url} alt="" className="aspect-square h-full w-full object-cover" />
+          <div className="space-y-3">
+            <div className="overflow-hidden rounded-lg bg-muted">
+              <img src={artwork.image_url} alt="" className="aspect-square h-full w-full object-cover" />
+            </div>
+            {(artwork.image_urls || []).length > 1 && (
+              <div className="grid grid-cols-4 gap-2">
+                {artwork.image_urls.slice(0, 4).map((imageUrl) => (
+                  <div key={imageUrl} className="overflow-hidden rounded-md border bg-muted">
+                    <img src={imageUrl} alt="" className="aspect-square h-full w-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-5">
@@ -256,6 +307,71 @@ export default function ArtworkDetailPage() {
         </section>
 
         <section className="py-6">
+          <div className="mb-6 grid gap-4 lg:grid-cols-[360px_1fr]">
+            <div className="rounded-lg border bg-card p-4">
+              <h2 className="text-lg font-bold">Rate this artwork</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Share feedback for this art style and artist.</p>
+              <div className="mt-4 grid grid-cols-5 gap-2">
+                {[1, 2, 3, 4, 5].map((rating) => (
+                  <Button
+                    key={rating}
+                    type="button"
+                    variant={feedbackRating === rating ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setFeedbackRating(rating)}
+                  >
+                    {rating}
+                  </Button>
+                ))}
+              </div>
+              <Input
+                className="mt-3"
+                value={feedbackTitle}
+                onChange={(event) => setFeedbackTitle(event.target.value)}
+                placeholder="Short title"
+              />
+              <Textarea
+                className="mt-3"
+                value={feedbackContent}
+                onChange={(event) => setFeedbackContent(event.target.value)}
+                placeholder="What did you like, or what should customers know?"
+                rows={4}
+              />
+              {feedbackMessage ? <p className="mt-2 text-sm text-muted-foreground">{feedbackMessage}</p> : null}
+              <Button className="mt-3 w-full" onClick={handleFeedback} disabled={isSubmittingFeedback}>
+                {isLoggedIn ? (isSubmittingFeedback ? "Saving..." : "Save feedback") : "Sign in to rate"}
+              </Button>
+            </div>
+
+            <div className="rounded-lg border bg-card p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold">Customer feedback</h2>
+                <Badge variant="secondary">{feedback.length} reviews</Badge>
+              </div>
+              {feedback.length === 0 ? (
+                <p className="mt-4 text-sm text-muted-foreground">No direct artwork feedback yet.</p>
+              ) : (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {feedback.slice(0, 6).map((item) => (
+                    <div key={item.id} className="rounded-lg border bg-background p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">{item.title || "Customer feedback"}</p>
+                        <span className="flex items-center gap-1 text-sm text-warning">
+                          <Star className="h-4 w-4 fill-current" />
+                          {item.rating}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">{item.content || "Rated this artwork."}</p>
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        {item.customer?.full_name || "Giftra customer"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-bold">More in {CATEGORY_LABELS[artwork.category]}</h2>
             <Button asChild variant="ghost" size="sm">
@@ -289,7 +405,6 @@ export default function ArtworkDetailPage() {
         initialCategory={artwork.category as GiftCategory}
         initialBudgetMin={artwork.price_min || undefined}
         initialBudgetMax={artwork.price_max || artwork.price_min || undefined}
-        preferredArtistId={artwork.artist_id}
         inspirationArtworkId={artwork.id}
       />
 
