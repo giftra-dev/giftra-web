@@ -73,7 +73,6 @@ export interface Request {
   id: string
   customer_id: string
   assigned_artist_id: string | null
-  preferred_artist_id: string | null
   inspiration_artwork_id: string | null
   approved_by_admin_id: string | null
   // Details
@@ -216,11 +215,49 @@ export interface ArtistArtwork {
   description: string | null
   category: GiftCategory
   image_url: string
+  image_urls: string[]
   price_min: number | null
   price_max: number | null
   tags: string[]
   is_featured: boolean
   is_public: boolean
+  approval_status: 'pending' | 'approved' | 'rejected'
+  approval_notes: string | null
+  approved_by_admin_id: string | null
+  approved_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SupportConversation {
+  id: string
+  customer_id: string
+  subject: string
+  status: 'open' | 'closed'
+  last_message_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SupportMessage {
+  id: string
+  conversation_id: string
+  sender_id: string
+  message: string
+  is_admin: boolean
+  created_at: string
+}
+
+export interface ArtworkFeedback {
+  id: string
+  artwork_id: string
+  artist_id: string
+  customer_id: string
+  rating: number
+  title: string | null
+  content: string | null
+  show_as_testimonial: boolean
+  is_visible: boolean
   created_at: string
   updated_at: string
 }
@@ -275,6 +312,16 @@ export interface ArtistArtworkWithArtist extends ArtistArtwork {
   artist?: Pick<Profile, 'id' | 'avatar_url' | 'bio' | 'specialties' | 'rating' | 'total_reviews' | 'is_available'>
 }
 
+export interface ArtworkFeedbackWithRelations extends ArtworkFeedback {
+  customer?: Pick<Profile, 'id' | 'full_name' | 'avatar_url'>
+  artwork?: Pick<ArtistArtwork, 'id' | 'title' | 'image_url' | 'category'>
+}
+
+export interface SupportConversationWithRelations extends SupportConversation {
+  customer?: Pick<Profile, 'id' | 'email' | 'full_name' | 'avatar_url'>
+  messages?: SupportMessage[]
+}
+
 // Form types
 export interface CreateRequestInput {
   title: string
@@ -286,7 +333,6 @@ export interface CreateRequestInput {
   deadline?: string
   budget_min?: number
   budget_max?: number
-  preferred_artist_id?: string
   inspiration_artwork_id?: string
 }
 

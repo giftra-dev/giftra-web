@@ -147,7 +147,6 @@ export default function CategoryPage() {
           initialCategory={selectedArtwork.category as GiftCategory}
           initialBudgetMin={selectedArtwork.price_min || undefined}
           initialBudgetMax={selectedArtwork.price_max || selectedArtwork.price_min || undefined}
-          preferredArtistId={selectedArtwork.artist_id}
           inspirationArtworkId={selectedArtwork.id}
         />
       )}

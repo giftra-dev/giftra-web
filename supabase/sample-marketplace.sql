@@ -333,11 +333,15 @@ BEGIN
       description,
       category,
       image_url,
+      image_urls,
       price_min,
       price_max,
       tags,
       is_featured,
       is_public,
+      approval_status,
+      approved_by_admin_id,
+      approved_at,
       created_at
     )
     VALUES (
@@ -346,16 +350,39 @@ BEGIN
       'A custom-made ' || REPLACE(chosen_category::TEXT, '_', ' ') || ' gift with artist consultation, preview sharing, and personalized finishing.',
       chosen_category,
       sample_images[((i - 1) % ARRAY_LENGTH(sample_images, 1)) + 1],
+      ARRAY[
+        sample_images[((i - 1) % ARRAY_LENGTH(sample_images, 1)) + 1],
+        sample_images[(i % ARRAY_LENGTH(sample_images, 1)) + 1],
+        sample_images[((i + 3) % ARRAY_LENGTH(sample_images, 1)) + 1]
+      ],
       min_price,
       max_price,
       ARRAY[
         chosen_category::TEXT,
         'custom gift',
         'personalized',
-        city_names[((i - 1) % ARRAY_LENGTH(city_names, 1)) + 1]
+        city_names[((i - 1) % ARRAY_LENGTH(city_names, 1)) + 1],
+        CASE
+          WHEN i % 6 = 0 THEN 'birthday'
+          WHEN i % 6 = 1 THEN 'wedding'
+          WHEN i % 6 = 2 THEN 'anniversary'
+          WHEN i % 6 = 3 THEN 'new baby'
+          WHEN i % 6 = 4 THEN 'corporate'
+          ELSE 'thank you'
+        END,
+        CASE
+          WHEN i % 5 = 0 THEN 'for her'
+          WHEN i % 5 = 1 THEN 'for him'
+          WHEN i % 5 = 2 THEN 'for couples'
+          WHEN i % 5 = 3 THEN 'for kids'
+          ELSE 'for parents'
+        END
       ],
       i <= 24,
       TRUE,
+      'approved',
+      '00000000-0000-0000-0000-000000000001'::UUID,
+      NOW() - ((i % 44) || ' days')::INTERVAL,
       NOW() - ((i % 45) || ' days')::INTERVAL
     )
     RETURNING id INTO artwork_id;

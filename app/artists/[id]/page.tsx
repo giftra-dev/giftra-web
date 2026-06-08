@@ -7,8 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header"
 import { CreateRequestDialog } from "@/components/create-request-dialog"
-import { getArtistPortfolio, getCurrentUser } from "@/lib/supabase/queries"
-import type { ArtistArtwork, GiftCategory, Profile, Review } from "@/lib/types/database"
+import { getArtistPortfolio, getArtistTestimonials, getCurrentUser } from "@/lib/supabase/queries"
+import type { ArtistArtwork, ArtworkFeedbackWithRelations, GiftCategory, Profile, Review } from "@/lib/types/database"
 import { CATEGORY_LABELS } from "@/lib/types/database"
 import { ArrowLeft, Heart, Star, UserCheck } from "lucide-react"
 
@@ -27,6 +27,7 @@ export default function PublicArtistPortfolioPage({
   const [artist, setArtist] = useState<Profile | null>(null)
   const [artworks, setArtworks] = useState<ArtistArtwork[]>([])
   const [reviews, setReviews] = useState<Review[]>([])
+  const [testimonials, setTestimonials] = useState<ArtworkFeedbackWithRelations[]>([])
   const [favorites, setFavorites] = useState<string[]>([])
   const [selectedArtwork, setSelectedArtwork] = useState<ArtistArtwork | null>(null)
   const [requestOpen, setRequestOpen] = useState(false)
@@ -35,13 +36,15 @@ export default function PublicArtistPortfolioPage({
 
   useEffect(() => {
     async function loadPortfolio() {
-      const [portfolio, userData] = await Promise.all([
+      const [portfolio, testimonialData, userData] = await Promise.all([
         getArtistPortfolio(id),
+        getArtistTestimonials(id),
         getCurrentUser().catch(() => ({ user: null })),
       ])
       setArtist(portfolio.artist)
       setArtworks(portfolio.artworks)
       setReviews(portfolio.reviews)
+      setTestimonials(testimonialData)
       setIsLoggedIn(Boolean(userData.user))
       setFavorites(JSON.parse(localStorage.getItem(favoriteStorageKey) || "[]"))
       setIsLoading(false)
@@ -212,8 +215,25 @@ export default function PublicArtistPortfolioPage({
       </section>
 
       <section className="container mx-auto px-4 pb-12">
-        <h2 className="mb-4 text-xl font-semibold">Customer Feedback</h2>
-        {reviews.length === 0 ? (
+        <h2 className="mb-4 text-xl font-semibold">Selected Testimonials</h2>
+        {testimonials.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            {testimonials.slice(0, 8).map((testimonial) => (
+              <div key={testimonial.id} className="rounded-lg border bg-card p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm">
+                  <Star className="h-4 w-4 fill-current text-warning" />
+                  <span className="font-medium">{testimonial.rating}/5</span>
+                  {testimonial.title && <span>{testimonial.title}</span>}
+                </div>
+                <p className="text-sm text-muted-foreground">{testimonial.content || "Rated this artwork."}</p>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {testimonial.customer?.full_name || "Giftra customer"}
+                  {testimonial.artwork?.title ? ` on ${testimonial.artwork.title}` : ""}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : reviews.length === 0 ? (
           <div className="rounded-lg border p-6 text-sm text-muted-foreground">No public feedback yet.</div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
@@ -241,7 +261,6 @@ export default function PublicArtistPortfolioPage({
           initialCategory={selectedArtwork.category as GiftCategory}
           initialBudgetMin={selectedArtwork.price_min || undefined}
           initialBudgetMax={selectedArtwork.price_max || selectedArtwork.price_min || undefined}
-          preferredArtistId={selectedArtwork.artist_id}
           inspirationArtworkId={selectedArtwork.id}
         />
       )}

@@ -18,6 +18,11 @@ import type {
   OrderWithRelations,
   ArtistArtwork,
   ArtistArtworkWithArtist,
+  ArtworkFeedback,
+  ArtworkFeedbackWithRelations,
+  SupportConversation,
+  SupportConversationWithRelations,
+  SupportMessage,
   UserRole,
   RequestStatus,
   GiftCategory,
@@ -275,6 +280,24 @@ export async function createRequest(
     return { data: null, error: new Error('Not authenticated') }
   }
 
+  let inspirationArtworkId = input.inspiration_artwork_id
+
+  if (inspirationArtworkId) {
+    const { data: artwork } = await supabase
+      .from('artist_artworks')
+      .select('id')
+      .eq('id', inspirationArtworkId)
+      .eq('is_public', true)
+      .eq('approval_status', 'approved')
+      .maybeSingle()
+
+    if (artwork) {
+      inspirationArtworkId = artwork.id
+    } else {
+      inspirationArtworkId = undefined
+    }
+  }
+
   const { data, error } = await supabase
     .from('requests')
     .insert({
@@ -288,8 +311,7 @@ export async function createRequest(
       deadline: input.deadline,
       budget_min: input.budget_min,
       budget_max: input.budget_max,
-      preferred_artist_id: input.preferred_artist_id,
-      inspiration_artwork_id: input.inspiration_artwork_id,
+      inspiration_artwork_id: inspirationArtworkId,
       status: 'pending_review',
     })
     .select()
@@ -754,6 +776,7 @@ export async function getPublicArtworks(): Promise<ArtistArtworkWithArtist[]> {
       )
     `)
     .eq('is_public', true)
+    .eq('approval_status', 'approved')
     .order('is_featured', { ascending: false })
     .order('created_at', { ascending: false })
 
@@ -778,6 +801,7 @@ export async function getPublicArtworkById(artworkId: string): Promise<ArtistArt
     `)
     .eq('id', artworkId)
     .eq('is_public', true)
+    .eq('approval_status', 'approved')
     .maybeSingle()
 
   return data as ArtistArtworkWithArtist | null
@@ -930,6 +954,7 @@ export async function getArtistPortfolio(
       .select('*')
       .eq('artist_id', artistId)
       .eq('is_public', true)
+      .eq('approval_status', 'approved')
       .order('created_at', { ascending: false }),
     supabase
       .from('reviews')
@@ -962,6 +987,7 @@ export async function createArtistArtwork(input: {
   description?: string
   category: GiftCategory
   image_url: string
+  image_urls?: string[]
   price_min?: number
   price_max?: number
   tags?: string[]
@@ -977,11 +1003,13 @@ export async function createArtistArtwork(input: {
       description: input.description,
       category: input.category,
       image_url: input.image_url,
+      image_urls: input.image_urls?.length ? input.image_urls : [input.image_url],
       price_min: input.price_min,
       price_max: input.price_max,
       tags: input.tags || [],
-      is_public: input.is_public ?? true,
+      is_public: input.is_public ?? false,
       is_featured: input.is_featured ?? false,
+      approval_status: 'pending',
     })
     .select()
     .single()
@@ -997,6 +1025,243 @@ export async function deleteArtistArtwork(artworkId: string): Promise<{ error: E
     .eq('id', artworkId)
 
   return { error: error as Error | null }
+}
+
+export async function getAllArtworksForAdmin(): Promise<Array<ArtistArtwork & {
+  artist?: Pick<Profile, 'id' | 'email' | 'full_name' | 'avatar_url' | 'rating'>
+}>> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('artist_artworks')
+    .select(`
+      *,
+      artist:profiles!artist_artworks_artist_id_fkey(id, email, full_name, avatar_url, rating)
+    `)
+    .order('approval_status', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  return (data || []) as Array<ArtistArtwork & {
+    artist?: Pick<Profile, 'id' | 'email' | 'full_name' | 'avatar_url' | 'rating'>
+  }>
+}
+
+export async function updateArtworkApproval(
+  artworkId: string,
+  approvalStatus: ArtistArtwork['approval_status'],
+  approvalNotes?: string
+): Promise<{ data: ArtistArtwork | null; error: Error | null }> {
+  const supabase = createClient()
+  const { user } = await getCurrentUser()
+  const isApproved = approvalStatus === 'approved'
+
+  const { data, error } = await supabase
+    .from('artist_artworks')
+    .update({
+      approval_status: approvalStatus,
+      approval_notes: approvalNotes || null,
+      is_public: isApproved,
+      approved_by_admin_id: isApproved ? user?.id : null,
+      approved_at: isApproved ? new Date().toISOString() : null,
+    })
+    .eq('id', artworkId)
+    .select()
+    .single()
+
+  return { data: data as ArtistArtwork | null, error: error as Error | null }
+}
+
+export async function getArtworkFeedback(artworkId: string): Promise<ArtworkFeedbackWithRelations[]> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('artwork_feedback')
+    .select(`
+      *,
+      customer:profiles!artwork_feedback_customer_id_fkey(id, full_name, avatar_url)
+    `)
+    .eq('artwork_id', artworkId)
+    .eq('is_visible', true)
+    .order('created_at', { ascending: false })
+
+  return (data || []) as ArtworkFeedbackWithRelations[]
+}
+
+export async function createArtworkFeedback(input: {
+  artwork_id: string
+  artist_id: string
+  rating: number
+  title?: string
+  content?: string
+}): Promise<{ data: ArtworkFeedback | null; error: Error | null }> {
+  const supabase = createClient()
+  const { user } = await getCurrentUser()
+
+  if (!user) {
+    return { data: null, error: new Error('Not authenticated') }
+  }
+
+  const { data, error } = await supabase
+    .from('artwork_feedback')
+    .upsert(
+      {
+        artwork_id: input.artwork_id,
+        artist_id: input.artist_id,
+        customer_id: user.id,
+        rating: input.rating,
+        title: input.title,
+        content: input.content,
+        is_visible: true,
+      },
+      { onConflict: 'customer_id,artwork_id' }
+    )
+    .select()
+    .single()
+
+  return { data: data as ArtworkFeedback | null, error: error as Error | null }
+}
+
+export async function getArtistTestimonials(artistId: string): Promise<ArtworkFeedbackWithRelations[]> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('artwork_feedback')
+    .select(`
+      *,
+      customer:profiles!artwork_feedback_customer_id_fkey(id, full_name, avatar_url),
+      artwork:artist_artworks(id, title, image_url, category)
+    `)
+    .eq('artist_id', artistId)
+    .eq('is_visible', true)
+    .eq('show_as_testimonial', true)
+    .order('created_at', { ascending: false })
+
+  return (data || []) as ArtworkFeedbackWithRelations[]
+}
+
+export async function getMyArtistFeedback(artistId: string): Promise<ArtworkFeedbackWithRelations[]> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('artwork_feedback')
+    .select(`
+      *,
+      customer:profiles!artwork_feedback_customer_id_fkey(id, full_name, avatar_url),
+      artwork:artist_artworks(id, title, image_url, category)
+    `)
+    .eq('artist_id', artistId)
+    .eq('is_visible', true)
+    .order('created_at', { ascending: false })
+
+  return (data || []) as ArtworkFeedbackWithRelations[]
+}
+
+export async function toggleFeedbackTestimonial(
+  feedbackId: string,
+  showAsTestimonial: boolean
+): Promise<{ data: ArtworkFeedback | null; error: Error | null }> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .rpc('set_artwork_feedback_testimonial', {
+      p_feedback_id: feedbackId,
+      p_show_as_testimonial: showAsTestimonial,
+    })
+
+  return { data: data as ArtworkFeedback | null, error: error as Error | null }
+}
+
+export async function getOrCreateSupportConversation(
+  subject = 'Customer support'
+): Promise<{ data: SupportConversation | null; error: Error | null }> {
+  const supabase = createClient()
+  const { user } = await getCurrentUser()
+
+  if (!user) {
+    return { data: null, error: new Error('Not authenticated') }
+  }
+
+  const { data: existing } = await supabase
+    .from('support_conversations')
+    .select('*')
+    .eq('customer_id', user.id)
+    .eq('status', 'open')
+    .order('last_message_at', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existing) {
+    return { data: existing as SupportConversation, error: null }
+  }
+
+  const { data, error } = await supabase
+    .from('support_conversations')
+    .insert({ customer_id: user.id, subject })
+    .select()
+    .single()
+
+  return { data: data as SupportConversation | null, error: error as Error | null }
+}
+
+export async function getSupportMessages(conversationId: string): Promise<SupportMessage[]> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('support_messages')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true })
+
+  return (data || []) as SupportMessage[]
+}
+
+export async function sendSupportMessage(
+  conversationId: string,
+  message: string
+): Promise<{ data: SupportMessage | null; error: Error | null }> {
+  const supabase = createClient()
+  const [{ user }, profile] = await Promise.all([getCurrentUser(), getCurrentProfile()])
+
+  if (!user) {
+    return { data: null, error: new Error('Not authenticated') }
+  }
+
+  const { data, error } = await supabase
+    .from('support_messages')
+    .insert({
+      conversation_id: conversationId,
+      sender_id: user.id,
+      message,
+      is_admin: profile?.role === 'admin',
+    })
+    .select()
+    .single()
+
+  return { data: data as SupportMessage | null, error: error as Error | null }
+}
+
+export async function getAllSupportConversations(): Promise<SupportConversationWithRelations[]> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('support_conversations')
+    .select(`
+      *,
+      customer:profiles!support_conversations_customer_id_fkey(id, email, full_name, avatar_url),
+      messages:support_messages(*)
+    `)
+    .order('last_message_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+
+  return (data || []) as SupportConversationWithRelations[]
+}
+
+export async function updateSupportConversationStatus(
+  conversationId: string,
+  status: SupportConversation['status']
+): Promise<{ data: SupportConversation | null; error: Error | null }> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('support_conversations')
+    .update({ status })
+    .eq('id', conversationId)
+    .select()
+    .single()
+
+  return { data: data as SupportConversation | null, error: error as Error | null }
 }
 
 export async function markOrderPaid(
@@ -1391,15 +1656,19 @@ export async function getArtistStats(artistId: string) {
 export async function getAdminStats() {
   const supabase = createClient()
   
-  const [requestsResult, ordersResult, usersResult] = await Promise.all([
+  const [requestsResult, ordersResult, usersResult, artworksResult, supportResult] = await Promise.all([
     supabase.from('requests').select('status'),
     supabase.from('orders').select('status, total'),
     supabase.from('profiles').select('role'),
+    supabase.from('artist_artworks').select('approval_status'),
+    supabase.from('support_conversations').select('status'),
   ])
 
   const requests = requestsResult.data || []
   const orders = ordersResult.data || []
   const users = usersResult.data || []
+  const artworks = artworksResult.data || []
+  const supportConversations = supportResult.data || []
 
   const totalRevenue = orders
     .filter(o => ['paid', 'in_progress', 'preview_shared', 'ready_to_ship', 'shipped', 'delivered', 'completed'].includes(o.status))
@@ -1412,6 +1681,8 @@ export async function getAdminStats() {
     totalUsers: users.length,
     totalArtists: users.filter(u => u.role === 'artist').length,
     totalCustomers: users.filter(u => u.role === 'customer').length,
+    pendingArtworks: artworks.filter((artwork) => artwork.approval_status === 'pending').length,
+    openSupportConversations: supportConversations.filter((conversation) => conversation.status === 'open').length,
   }
 }
 
@@ -1437,6 +1708,29 @@ export function subscribeToMessages(
       },
       (payload) => {
         callback(payload.new as Message)
+      }
+    )
+    .subscribe()
+}
+
+export function subscribeToSupportMessages(
+  conversationId: string,
+  callback: (message: SupportMessage) => void
+) {
+  const supabase = createClient()
+
+  return supabase
+    .channel(`support_messages:${conversationId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'support_messages',
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      (payload) => {
+        callback(payload.new as SupportMessage)
       }
     )
     .subscribe()

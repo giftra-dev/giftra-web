@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import Chip from "@mui/material/Chip"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -79,11 +80,19 @@ const fallbackArtworks: ArtistArtworkWithArtist[] = Array.from({ length: 24 }, (
     description: "Custom gift sample for made-to-order inspiration.",
     category,
     image_url: `https://picsum.photos/seed/giftra-home-${index + 1}/700/700`,
+    image_urls: [
+      `https://picsum.photos/seed/giftra-home-${index + 1}/700/700`,
+      `https://picsum.photos/seed/giftra-home-detail-${index + 1}/700/700`,
+    ],
     price_min: 45 + index * 5,
     price_max: 95 + index * 11,
     tags: ["custom", "gift", category.replace("_", " ")],
     is_featured: index < 10,
     is_public: true,
+    approval_status: "approved",
+    approval_notes: null,
+    approved_by_admin_id: null,
+    approved_at: new Date(Date.now() - index * 3600000).toISOString(),
     created_at: new Date(Date.now() - index * 3600000).toISOString(),
     updated_at: new Date().toISOString(),
     artist: {
@@ -218,6 +227,27 @@ function MarketplaceTile({
         <Link href={`/artists/${artwork.artist_id}`} className="line-clamp-1 block text-xs text-muted-foreground hover:text-primary">
           {anonymousArtistName(artwork.artist_id)}
         </Link>
+        {(artwork.tags || []).length > 0 && (
+          <div className="flex min-h-6 gap-1 overflow-hidden">
+            {artwork.tags.slice(0, 2).map((item) => (
+              <Chip
+                key={item}
+                label={item}
+                size="small"
+                variant="outlined"
+                sx={{
+                  maxWidth: 96,
+                  height: 22,
+                  "& .MuiChip-label": {
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  },
+                }}
+              />
+            ))}
+          </div>
+        )}
         <div className="flex items-end justify-between gap-2">
           <div>
             <p className="text-base font-bold">{formatPrice(artwork)}</p>
@@ -247,6 +277,7 @@ export function LandingPage() {
   const [sort, setSort] = useState<SortOption>("featured")
   const [price, setPrice] = useState<PriceFilter>("all")
   const [rating, setRating] = useState<RatingFilter>("all")
+  const [tag, setTag] = useState("all")
   const [selectedArtwork, setSelectedArtwork] = useState<ArtistArtworkWithArtist | null>(null)
   const [requestOpen, setRequestOpen] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -333,6 +364,23 @@ export function LandingPage() {
     return [...artworks].sort((a, b) => getRating(b) - getRating(a)).slice(0, 6)
   }, [artworks])
 
+  const popularTags = useMemo(() => {
+    const counts = new Map<string, number>()
+
+    artworks.forEach((artwork) => {
+      ;(artwork.tags || []).forEach((item) => {
+        const normalized = item.trim().toLowerCase()
+        if (!normalized) return
+        counts.set(normalized, (counts.get(normalized) || 0) + 1)
+      })
+    })
+
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 18)
+      .map(([value, count]) => ({ value, count }))
+  }, [artworks])
+
   const filteredArtworks = useMemo(() => {
     const filtered = artworks.filter((artwork) => {
       const text = [
@@ -349,6 +397,7 @@ export function LandingPage() {
       const matchesSearch = text.includes(search.toLowerCase())
       const matchesCategory = category === "all" || artwork.category === category
       const matchesArtist = artist === "all" || artwork.artist_id === artist
+      const matchesTag = tag === "all" || (artwork.tags || []).some((item) => item.toLowerCase() === tag)
       const matchesPrice =
         price === "all" ||
         (price === "under100" && maxPrice <= 100) ||
@@ -359,7 +408,7 @@ export function LandingPage() {
         (rating === "4plus" && itemRating >= 4) ||
         (rating === "45plus" && itemRating >= 4.5)
 
-      return matchesSearch && matchesCategory && matchesArtist && matchesPrice && matchesRating
+      return matchesSearch && matchesCategory && matchesArtist && matchesTag && matchesPrice && matchesRating
     })
 
     return filtered.sort((a, b) => {
@@ -369,7 +418,7 @@ export function LandingPage() {
       if (sort === "rating") return getRating(b) - getRating(a)
       return Number(b.is_featured) - Number(a.is_featured) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     })
-  }, [artist, artworks, category, price, rating, search, sort])
+  }, [artist, artworks, category, price, rating, search, sort, tag])
 
   const toggleFavorite = async (artworkId: string) => {
     const shouldSave = !favorites.includes(artworkId)
@@ -398,6 +447,7 @@ export function LandingPage() {
     setSearch("")
     setCategory("all")
     setArtist("all")
+    setTag("all")
     setPrice("all")
     setRating("all")
     setSort("featured")
@@ -854,6 +904,30 @@ export function LandingPage() {
                   </Select>
                 </div>
               </div>
+              {popularTags.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Chip
+                    label="All tags"
+                    size="small"
+                    color={tag === "all" ? "primary" : "default"}
+                    variant={tag === "all" ? "filled" : "outlined"}
+                    onClick={() => setTag("all")}
+                  />
+                  {popularTags.map((item) => (
+                    <Chip
+                      key={item.value}
+                      label={`${item.value} (${item.count})`}
+                      size="small"
+                      color={tag === item.value ? "primary" : "default"}
+                      variant={tag === item.value ? "filled" : "outlined"}
+                      onClick={() => {
+                        setTag(item.value)
+                        setSearch("")
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="p-4 md:p-5">
@@ -904,7 +978,6 @@ export function LandingPage() {
           initialCategory={selectedArtwork.category as GiftCategory}
           initialBudgetMin={selectedArtwork.price_min || undefined}
           initialBudgetMax={selectedArtwork.price_max || selectedArtwork.price_min || undefined}
-          preferredArtistId={selectedArtwork.artist_id}
           inspirationArtworkId={selectedArtwork.id}
         />
       )}

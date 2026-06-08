@@ -16,10 +16,12 @@ import {
   deleteArtistArtwork,
   getCurrentProfile,
   getMyArtistArtworks,
+  getMyArtistFeedback,
+  toggleFeedbackTestimonial,
   updateProfile,
   uploadFileToStorage,
 } from "@/lib/supabase/queries"
-import type { ArtistArtwork, GiftCategory, Profile, UpdateProfileInput, UserRole } from "@/lib/types/database"
+import type { ArtistArtwork, ArtworkFeedbackWithRelations, GiftCategory, Profile, UpdateProfileInput, UserRole } from "@/lib/types/database"
 import { CATEGORY_LABELS } from "@/lib/types/database"
 import {
   Select,
@@ -52,7 +54,8 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
   const [artworkPriceMin, setArtworkPriceMin] = useState("")
   const [artworkPriceMax, setArtworkPriceMax] = useState("")
   const [artworkTags, setArtworkTags] = useState("")
-  const [artworkFile, setArtworkFile] = useState<File | null>(null)
+  const [artworkFiles, setArtworkFiles] = useState<File[]>([])
+  const [artistFeedback, setArtistFeedback] = useState<ArtworkFeedbackWithRelations[]>([])
   const [isAddingArtwork, setIsAddingArtwork] = useState(false)
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
@@ -69,7 +72,12 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
         setSpecialties(currentProfile.specialties || [])
         setIsAvailable(currentProfile.is_available)
         if (currentProfile.role === "artist") {
-          setArtworks(await getMyArtistArtworks(currentProfile.id))
+          const [artistArtworks, feedback] = await Promise.all([
+            getMyArtistArtworks(currentProfile.id),
+            getMyArtistFeedback(currentProfile.id),
+          ])
+          setArtworks(artistArtworks)
+          setArtistFeedback(feedback)
         }
       }
       setIsLoading(false)
@@ -124,12 +132,12 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
     setArtworkPriceMin("")
     setArtworkPriceMax("")
     setArtworkTags("")
-    setArtworkFile(null)
+    setArtworkFiles([])
   }
 
   const handleAddArtwork = async () => {
-    if (!profile || !artworkFile || !artworkTitle) {
-      setError("Please add a title and artwork image.")
+    if (!profile || artworkFiles.length === 0 || !artworkTitle) {
+      setError("Please add a title and at least one artwork image.")
       return
     }
 
@@ -137,15 +145,27 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
     setError("")
     setMessage("")
 
-    const safeName = artworkFile.name.replace(/[^a-zA-Z0-9._-]/g, "-")
-    const { url, error: uploadError } = await uploadFileToStorage(
-      "artist-artworks",
-      `${profile.id}/${Date.now()}-${safeName}`,
-      artworkFile
-    )
+    const uploadedUrls: string[] = []
 
-    if (uploadError || !url) {
-      setError(uploadError?.message || "Unable to upload artwork.")
+    for (const file of artworkFiles) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-")
+      const { url, error: uploadError } = await uploadFileToStorage(
+        "artist-artworks",
+        `${profile.id}/${Date.now()}-${safeName}`,
+        file
+      )
+
+      if (uploadError || !url) {
+        setError(uploadError?.message || "Unable to upload artwork.")
+        setIsAddingArtwork(false)
+        return
+      }
+
+      uploadedUrls.push(url)
+    }
+
+    if (uploadedUrls.length === 0) {
+      setError("Unable to upload artwork.")
       setIsAddingArtwork(false)
       return
     }
@@ -155,7 +175,8 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
       title: artworkTitle,
       description: artworkDescription || undefined,
       category: artworkCategory,
-      image_url: url,
+      image_url: uploadedUrls[0],
+      image_urls: uploadedUrls,
       price_min: artworkPriceMin ? Number.parseInt(artworkPriceMin, 10) : undefined,
       price_max: artworkPriceMax ? Number.parseInt(artworkPriceMax, 10) : undefined,
       tags: artworkTags.split(",").map((tag) => tag.trim()).filter(Boolean),
@@ -165,7 +186,7 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
       setError(createError.message)
     } else if (data) {
       setArtworks((current) => [data, ...current])
-      setMessage("Artwork added to your public portfolio.")
+      setMessage("Artwork submitted for admin approval.")
       resetArtworkForm()
     }
 
@@ -179,6 +200,20 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
       return
     }
     setArtworks((current) => current.filter((artwork) => artwork.id !== artworkId))
+  }
+
+  const handleToggleTestimonial = async (feedbackId: string, checked: boolean) => {
+    const { error: testimonialError } = await toggleFeedbackTestimonial(feedbackId, checked)
+    if (testimonialError) {
+      setError(testimonialError.message)
+      return
+    }
+
+    setArtistFeedback((current) =>
+      current.map((feedback) =>
+        feedback.id === feedbackId ? { ...feedback, show_as_testimonial: checked } : feedback
+      )
+    )
   }
 
   if (isLoading) {
@@ -378,13 +413,18 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
                       </div>
                       <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-4 text-center">
                         <ImagePlus className="mb-2 h-6 w-6 text-muted-foreground" />
-                        <span className="text-sm font-medium">{artworkFile ? artworkFile.name : "Upload sample photo"}</span>
-                        <span className="text-xs text-muted-foreground">PNG or JPG recommended</span>
+                        <span className="text-sm font-medium">
+                          {artworkFiles.length > 0
+                            ? `${artworkFiles.length} photo${artworkFiles.length === 1 ? "" : "s"} selected`
+                            : "Upload sample photos"}
+                        </span>
+                        <span className="text-xs text-muted-foreground">PNG or JPG recommended. Add multiple angles or details.</span>
                         <Input
                           type="file"
                           accept="image/*"
+                          multiple
                           className="sr-only"
-                          onChange={(event) => setArtworkFile(event.target.files?.[0] || null)}
+                          onChange={(event) => setArtworkFiles(Array.from(event.target.files || []))}
                         />
                       </label>
                       <Button type="button" onClick={handleAddArtwork} disabled={isAddingArtwork} className="w-full">
@@ -401,8 +441,22 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
                           <div className="space-y-2 p-3">
                             <div className="flex items-start justify-between gap-2">
                               <div>
-                                <p className="font-medium">{artwork.title}</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="font-medium">{artwork.title}</p>
+                                  <Badge
+                                    variant={artwork.approval_status === "approved" ? "default" : artwork.approval_status === "rejected" ? "destructive" : "secondary"}
+                                    className="rounded-sm"
+                                  >
+                                    {artwork.approval_status}
+                                  </Badge>
+                                </div>
                                 <p className="text-xs text-muted-foreground">{CATEGORY_LABELS[artwork.category]}</p>
+                                {(artwork.image_urls || []).length > 1 && (
+                                  <p className="text-xs text-muted-foreground">{artwork.image_urls.length} photos</p>
+                                )}
+                                {artwork.approval_notes && (
+                                  <p className="text-xs text-muted-foreground">Admin note: {artwork.approval_notes}</p>
+                                )}
                               </div>
                               <Button
                                 type="button"
@@ -415,6 +469,42 @@ export function ProfileSettingsPage({ role }: { role: UserRole }) {
                             </div>
                           </div>
                         </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Testimonials</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {artistFeedback.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Customer feedback on your approved artwork will appear here. Select feedback to show it on your public portfolio.
+                    </p>
+                  ) : (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {artistFeedback.map((feedback) => (
+                        <label key={feedback.id} className="flex cursor-pointer gap-3 rounded-lg border p-3">
+                          <Checkbox
+                            checked={feedback.show_as_testimonial}
+                            onCheckedChange={(checked) => handleToggleTestimonial(feedback.id, checked === true)}
+                          />
+                          <span className="space-y-1 text-sm">
+                            <span className="block font-medium">
+                              {feedback.title || "Customer feedback"} · {feedback.rating}/5
+                            </span>
+                            <span className="block text-muted-foreground">
+                              {feedback.content || "Rated this artwork."}
+                            </span>
+                            <span className="block text-xs text-muted-foreground">
+                              {feedback.customer?.full_name || "Giftra customer"}
+                              {feedback.artwork?.title ? ` on ${feedback.artwork.title}` : ""}
+                            </span>
+                          </span>
+                        </label>
                       ))}
                     </div>
                   )}
