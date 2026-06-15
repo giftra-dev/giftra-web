@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { RequestChatPanel } from "@/components/request-chat-panel"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -374,6 +375,10 @@ function RequestDetailContent({ requestId }: { requestId: string }) {
               </CardContent>
             </Card>
           )}
+
+          {chatRoom && (
+            <RequestChatPanel chatRoom={chatRoom} request={request} onChanged={loadData} />
+          )}
         </div>
 
         <div className="space-y-6">
@@ -424,13 +429,11 @@ function RequestDetailContent({ requestId }: { requestId: string }) {
                 </div>
               )}
 
-              {chatRoom && order && !["awaiting_payment", "draft"].includes(order.status) && (
-                <Button asChild className="w-full gap-2" variant="outline">
-                  <Link href={`/chat/${chatRoom.id}`}>
-                    <MessageSquare className="w-4 h-4" />
-                    Open Chat
-                  </Link>
-                </Button>
+              {chatRoom && (
+                <div className="rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
+                  <MessageSquare className="mb-2 h-4 w-4" />
+                  Chat is available in this request page.
+                </div>
               )}
             </CardContent>
           </Card>

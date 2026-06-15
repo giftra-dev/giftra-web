@@ -28,6 +28,7 @@ DROP FUNCTION IF EXISTS public.send_chat_message(UUID, TEXT, TEXT, JSONB) CASCAD
 DROP FUNCTION IF EXISTS public.set_artwork_feedback_testimonial(UUID, BOOLEAN) CASCADE;
 DROP FUNCTION IF EXISTS public.protect_artwork_feedback_update() CASCADE;
 DROP FUNCTION IF EXISTS public.set_support_message_admin_flag() CASCADE;
+DROP FUNCTION IF EXISTS public.protect_chat_room_moderation_update() CASCADE;
 
 DROP TABLE IF EXISTS public.activity_log CASCADE;
 DROP TABLE IF EXISTS public.notifications CASCADE;
@@ -127,6 +128,10 @@ CREATE TABLE public.profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX profiles_artist_full_name_unique_idx
+ON public.profiles (LOWER(full_name))
+WHERE role = 'artist' AND full_name IS NOT NULL;
+
 CREATE TABLE public.artist_artworks (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   artist_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -181,6 +186,10 @@ CREATE TABLE public.chat_rooms (
   customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   artist_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  moderation_status TEXT NOT NULL DEFAULT 'active' CHECK (moderation_status IN ('active', 'paused', 'ended')),
+  moderation_warning TEXT,
+  moderated_by_admin_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  moderated_at TIMESTAMPTZ,
   admin_can_view BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_message_at TIMESTAMPTZ
@@ -548,6 +557,30 @@ CREATE TRIGGER messages_touch_chat_room
 AFTER INSERT ON public.messages
 FOR EACH ROW EXECUTE FUNCTION public.touch_chat_room_last_message();
 
+CREATE OR REPLACE FUNCTION public.protect_chat_room_moderation_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF public.is_admin() THEN
+    RETURN NEW;
+  END IF;
+
+  NEW.moderation_status = OLD.moderation_status;
+  NEW.moderation_warning = OLD.moderation_warning;
+  NEW.moderated_by_admin_id = OLD.moderated_by_admin_id;
+  NEW.moderated_at = OLD.moderated_at;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER protect_chat_room_moderation_update
+BEFORE UPDATE ON public.chat_rooms
+FOR EACH ROW EXECUTE FUNCTION public.protect_chat_room_moderation_update();
+
 CREATE OR REPLACE FUNCTION public.touch_support_conversation_last_message()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -690,10 +723,12 @@ BEGIN
   WHERE id = p_gift_request_id;
 
   INSERT INTO public.chat_rooms (request_id, customer_id, artist_id, is_active)
-  VALUES (p_gift_request_id, v_request.customer_id, p_artist_id, FALSE)
+  VALUES (p_gift_request_id, v_request.customer_id, p_artist_id, TRUE)
   ON CONFLICT (request_id) DO UPDATE SET
     artist_id = EXCLUDED.artist_id,
-    is_active = FALSE
+    is_active = TRUE,
+    moderation_status = 'active',
+    moderation_warning = NULL
   RETURNING * INTO v_room;
 
   INSERT INTO public.orders (
@@ -725,8 +760,8 @@ BEGIN
 
   INSERT INTO public.notifications (user_id, title, message, link)
   VALUES
-    (v_request.customer_id, 'Your custom gift quote is ready', 'Review the quote and complete payment to unlock chat.', '/customer/requests/' || p_gift_request_id),
-    (p_artist_id, 'A new order was assigned to you', 'The customer can chat after payment is completed.', '/artist/orders');
+    (v_request.customer_id, 'Your custom gift quote is ready', 'Review the quote, discuss details with the artist, and complete payment when ready.', '/customer/request/' || p_gift_request_id),
+    (p_artist_id, 'A new request was assigned to you', 'Discuss details with the customer and agree on the final price before payment.', '/artist/orders');
 
   RETURN v_order;
 END;
@@ -775,7 +810,7 @@ BEGIN
   WHERE id = v_order.request_id;
 
   UPDATE public.chat_rooms
-  SET is_active = TRUE
+  SET is_active = TRUE, moderation_status = 'active'
   WHERE request_id = v_order.request_id;
 
   INSERT INTO public.notifications (user_id, title, message, link)
@@ -858,7 +893,11 @@ BEGIN
   END IF;
 
   IF NOT v_room.is_active AND NOT public.is_admin() THEN
-    RAISE EXCEPTION 'Chat is locked until payment is completed';
+    RAISE EXCEPTION 'Chat is not active';
+  END IF;
+
+  IF v_room.moderation_status <> 'active' AND NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Chat is currently % by Giftra admin: %', v_room.moderation_status, COALESCE(v_room.moderation_warning, 'Guideline review in progress');
   END IF;
 
   IF auth.uid() NOT IN (v_room.customer_id, v_room.artist_id) AND NOT public.is_admin() THEN

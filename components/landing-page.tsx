@@ -34,13 +34,9 @@ import type { ArtistArtworkWithArtist, GiftCategory, UserRole } from "@/lib/type
 import { CATEGORY_LABELS } from "@/lib/types/database"
 import {
   ChevronDown,
-  CreditCard,
   Gift,
   Heart,
-  PackageCheck,
   Search,
-  ShieldCheck,
-  Sparkles,
   Star,
   Store,
   UserRound,
@@ -130,27 +126,6 @@ const explainerSlides = [
     title: "Every listing leads to a made-to-order gift",
     description: "Artists showcase portfolio samples while customers request similar pieces tailored to occasion, recipient, budget, and deadline.",
   },
-]
-const occasionFilters = [
-  { label: "Birthday", query: "birthday", tone: "bg-primary/10 text-primary" },
-  { label: "Wedding", query: "wedding", tone: "bg-secondary text-secondary-foreground" },
-  { label: "Anniversary", query: "anniversary", tone: "bg-accent text-accent-foreground" },
-  { label: "New baby", query: "baby", tone: "bg-info/10 text-info" },
-  { label: "Thank you", query: "thank you", tone: "bg-success/10 text-success" },
-  { label: "Corporate", query: "corporate", tone: "bg-muted text-foreground" },
-]
-const recipientFilters = [
-  "For her",
-  "For him",
-  "For couples",
-  "For kids",
-  "For parents",
-  "For friends",
-]
-const budgetFilters: Array<{ label: string; value: PriceFilter }> = [
-  { label: "Under $100", value: "under100" },
-  { label: "$100 - $250", value: "100to250" },
-  { label: "$250+", value: "250plus" },
 ]
 
 function anonymousArtistName(artistId: string) {
@@ -277,7 +252,7 @@ export function LandingPage() {
   const [sort, setSort] = useState<SortOption>("featured")
   const [price, setPrice] = useState<PriceFilter>("all")
   const [rating, setRating] = useState<RatingFilter>("all")
-  const [tag, setTag] = useState("all")
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [selectedArtwork, setSelectedArtwork] = useState<ArtistArtworkWithArtist | null>(null)
   const [requestOpen, setRequestOpen] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -331,13 +306,6 @@ export function LandingPage() {
     return () => window.clearInterval(interval)
   }, [heroCarouselApi])
 
-  const categoryCounts = useMemo(() => {
-    return artworks.reduce<Record<string, number>>((counts, artwork) => {
-      counts[artwork.category] = (counts[artwork.category] || 0) + 1
-      return counts
-    }, {})
-  }, [artworks])
-
   const artistOptions = useMemo(() => {
     const seen = new Set<string>()
     return artworks
@@ -358,10 +326,6 @@ export function LandingPage() {
   const featured = useMemo(() => {
     const items = artworks.filter((artwork) => artwork.is_featured)
     return (items.length > 0 ? items : artworks).slice(0, 10)
-  }, [artworks])
-
-  const topRated = useMemo(() => {
-    return [...artworks].sort((a, b) => getRating(b) - getRating(a)).slice(0, 6)
   }, [artworks])
 
   const popularTags = useMemo(() => {
@@ -397,7 +361,8 @@ export function LandingPage() {
       const matchesSearch = text.includes(search.toLowerCase())
       const matchesCategory = category === "all" || artwork.category === category
       const matchesArtist = artist === "all" || artwork.artist_id === artist
-      const matchesTag = tag === "all" || (artwork.tags || []).some((item) => item.toLowerCase() === tag)
+      const artworkTags = (artwork.tags || []).map((item) => item.toLowerCase())
+      const matchesTag = selectedTags.length === 0 || selectedTags.every((item) => artworkTags.includes(item))
       const matchesPrice =
         price === "all" ||
         (price === "under100" && maxPrice <= 100) ||
@@ -418,7 +383,7 @@ export function LandingPage() {
       if (sort === "rating") return getRating(b) - getRating(a)
       return Number(b.is_featured) - Number(a.is_featured) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     })
-  }, [artist, artworks, category, price, rating, search, sort, tag])
+  }, [artist, artworks, category, price, rating, search, selectedTags, sort])
 
   const toggleFavorite = async (artworkId: string) => {
     const shouldSave = !favorites.includes(artworkId)
@@ -447,18 +412,23 @@ export function LandingPage() {
     setSearch("")
     setCategory("all")
     setArtist("all")
-    setTag("all")
+    setSelectedTags([])
     setPrice("all")
     setRating("all")
     setSort("featured")
   }
 
+  const toggleTag = (value: string) => {
+    setSelectedTags((current) =>
+      current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value]
+    )
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 border-b bg-card shadow-sm">
-        <div className="bg-primary px-4 py-2 text-center text-xs font-semibold text-primary-foreground">
-          Personalised gifts, artist-made and request-ready
-        </div>
         <div className="container mx-auto flex min-h-16 flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center">
           <div className="flex items-center justify-between gap-3">
             <Link href="/" className="flex items-center gap-2">
@@ -535,69 +505,27 @@ export function LandingPage() {
             </Button>
           </div>
         </div>
-
-        <div className="border-t bg-background">
-          <div className="container mx-auto flex gap-2 overflow-x-auto px-4 py-2">
-            {["Occasions", "Recipients", "Personalised", "New in", "Top rated"].map((item) => (
-              <Button
-                key={item}
-                asChild
-                size="sm"
-                variant="ghost"
-                className="h-8 shrink-0"
-              >
-                <Link href={item === "Top rated" ? "#top-rated" : "#gift-finder"}>{item}</Link>
-              </Button>
-            ))}
-            <Button
-              type="button"
-              size="sm"
-              variant={category === "all" ? "default" : "ghost"}
-              className="h-8 shrink-0"
-              onClick={() => setCategory("all")}
-            >
-              All
-            </Button>
-            {categoryEntries.map(([value, label]) => (
-              <Button
-                key={value}
-                type="button"
-                size="sm"
-                variant={category === value ? "default" : "ghost"}
-                className="h-8 shrink-0"
-                onClick={() => setCategory(value)}
-              >
-                {label}
-              </Button>
-            ))}
-          </div>
-        </div>
       </header>
 
       <main>
-        <section className="border-b bg-background">
-          <div className="container mx-auto grid gap-5 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <Carousel opts={{ align: "start", loop: true }} setApi={(api) => setHeroCarouselApi(api || null)} className="min-w-0">
+        <section className="bg-background">
+          <div className="container mx-auto px-4 py-5">
+            <Carousel opts={{ align: "start", loop: true }} setApi={(api) => setHeroCarouselApi(api || null)}>
               <CarouselContent>
                 {explainerSlides.map((slide, index) => {
                   const artwork = featured[index % Math.max(featured.length, 1)]
                   return (
                     <CarouselItem key={slide.title}>
-                      <div className="grid min-h-[390px] overflow-hidden rounded-lg border bg-card shadow-sm md:grid-cols-[1fr_0.9fr]">
-                      <div className="flex flex-col justify-between gap-4 p-7 lg:p-9">
+                      <div className="grid min-h-[320px] overflow-hidden rounded-lg border bg-card shadow-sm md:grid-cols-[1fr_0.85fr]">
+                      <div className="flex flex-col justify-between gap-4 p-6 lg:p-8">
                         <div>
                           <Badge className="mb-4 rounded-full bg-accent text-accent-foreground">{slide.label}</Badge>
-                          <h1 className="max-w-xl text-4xl font-bold leading-tight md:text-5xl">
+                          <h1 className="max-w-xl text-3xl font-bold leading-tight md:text-4xl">
                             {slide.title}
                           </h1>
                           <p className="mt-4 max-w-xl text-base text-muted-foreground">
                             {slide.description}
                           </p>
-                          <div className="mt-6 grid max-w-lg gap-2 text-sm sm:grid-cols-3">
-                            <span className="rounded-full bg-primary/10 px-3 py-2 text-primary">Browse samples</span>
-                            <span className="rounded-full bg-secondary px-3 py-2 text-secondary-foreground">Save favorites</span>
-                            <span className="rounded-full bg-muted px-3 py-2 text-foreground">Raise request</span>
-                          </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <Button asChild>
@@ -611,12 +539,6 @@ export function LandingPage() {
                               <Link href={`/artists/${artwork.artist_id}`}>View sample artist</Link>
                             </Button>
                           ) : null}
-                          <Button asChild variant="secondary">
-                            <Link href="/auth/artist/login">
-                              <Store className="mr-2 h-4 w-4" />
-                              Become an artist
-                            </Link>
-                          </Button>
                         </div>
                       </div>
                       <div className="relative min-h-[260px] bg-muted">
@@ -644,50 +566,6 @@ export function LandingPage() {
               <CarouselPrevious className="left-2" />
               <CarouselNext className="right-2" />
             </Carousel>
-
-            <aside id="gift-finder" className="grid gap-3">
-              <div className="rounded-lg border bg-card p-5 shadow-sm">
-                <p className="text-sm font-semibold">Find gifts by occasion</p>
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  {occasionFilters.map((item) => (
-                    <button
-                      key={item.label}
-                      type="button"
-                      className={`rounded-full px-3 py-2 text-sm font-medium ${item.tone}`}
-                      onClick={() => {
-                        setSearch(item.query)
-                        document.getElementById("artworks")?.scrollIntoView({ behavior: "smooth" })
-                      }}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-lg border bg-card p-5 shadow-sm">
-                <p className="text-sm font-semibold">Shop by budget</p>
-                <div className="mt-4 grid gap-2">
-                  {budgetFilters.map((item) => (
-                    <button
-                      key={item.value}
-                      type="button"
-                      className="rounded-md border px-3 py-2 text-left text-sm hover:bg-muted"
-                      onClick={() => {
-                        setPrice(item.value)
-                        document.getElementById("artworks")?.scrollIntoView({ behavior: "smooth" })
-                      }}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-lg border bg-card p-4 shadow-sm">
-                <ShieldCheck className="mb-3 h-5 w-5 text-primary" />
-                <p className="text-sm font-semibold">Protected ordering</p>
-                <p className="mt-1 text-xs text-muted-foreground">Payment and chat unlock after approved workflow.</p>
-              </div>
-            </aside>
           </div>
           <div className="flex justify-center pb-4">
             <Button asChild variant="ghost" size="sm" className="gap-2">
@@ -696,140 +574,6 @@ export function LandingPage() {
                 <ChevronDown className="h-4 w-4" />
               </Link>
             </Button>
-          </div>
-        </section>
-
-        <section className="border-b bg-card">
-          <div className="container mx-auto grid gap-3 px-4 py-3 sm:grid-cols-3">
-            <div className="flex items-center gap-2 text-sm">
-              <CreditCard className="h-4 w-4 text-primary" />
-              Secure payments
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <PackageCheck className="h-4 w-4 text-primary" />
-              Admin-reviewed requests
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <Sparkles className="h-4 w-4 text-primary" />
-              Curated artist portfolios
-            </div>
-          </div>
-        </section>
-
-        <section className="container mx-auto px-4 py-8">
-          <div className="mb-4 flex items-end justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-bold">Shop thoughtful gifts your way</h2>
-              <p className="text-sm text-muted-foreground">Start with recipient, occasion, category, or budget.</p>
-            </div>
-            <Button asChild variant="ghost" size="sm">
-              <Link href="#artworks">All gifts</Link>
-            </Button>
-          </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-lg border bg-secondary p-5 text-secondary-foreground">
-              <p className="text-sm font-semibold">By recipient</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {recipientFilters.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    className="rounded-full bg-background/70 px-3 py-2 text-sm text-foreground hover:bg-background"
-                    onClick={() => {
-                      setSearch(item)
-                      document.getElementById("artworks")?.scrollIntoView({ behavior: "smooth" })
-                    }}
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-lg border bg-accent p-5 text-accent-foreground">
-              <p className="text-sm font-semibold">By category</p>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                {categoryEntries.slice(0, 6).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className="rounded-md bg-background/75 px-3 py-2 text-left text-sm text-foreground hover:bg-background"
-                    onClick={() => {
-                      setCategory(value)
-                      document.getElementById("artworks")?.scrollIntoView({ behavior: "smooth" })
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-lg border bg-secondary p-5 text-secondary-foreground">
-              <p className="text-sm font-semibold">By artist</p>
-              <div className="mt-4 grid gap-2">
-                {artistOptions.slice(0, 4).map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    className="rounded-md bg-background/75 px-3 py-2 text-left text-sm text-foreground hover:bg-background"
-                    onClick={() => {
-                      setArtist(option.id)
-                      document.getElementById("artworks")?.scrollIntoView({ behavior: "smooth" })
-                    }}
-                  >
-                    {option.name} · {option.count} gifts
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="top-rated" className="container mx-auto px-4 py-5">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold">Top-rated custom gifts</h2>
-              <p className="text-xs text-muted-foreground">Fast inspiration from highly rated sample work.</p>
-            </div>
-            <Button asChild variant="ghost" size="sm">
-              <Link href="#artworks">See all</Link>
-            </Button>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-            {topRated.map((artwork) => (
-              <Link
-                key={artwork.id}
-                href={`/artwork/${artwork.id}`}
-                className="group overflow-hidden rounded-md border bg-card"
-              >
-                <div className="aspect-square bg-muted">
-                  <img src={artwork.image_url} alt="" className="h-full w-full object-cover transition group-hover:scale-[1.02]" />
-                </div>
-                <div className="p-2">
-                  <p className="line-clamp-1 text-xs font-medium">{artwork.title}</p>
-                  <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-                    <Star className="h-3 w-3 fill-current text-warning" />
-                    {getRating(artwork).toFixed(1)} - {formatPrice(artwork)}
-                  </p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        <section className="border-y bg-card">
-          <div className="container mx-auto grid gap-4 px-4 py-8 md:grid-cols-4">
-            {[
-              ["1", "Choose a sample", "Browse artwork and save styles you love."],
-              ["2", "Share the brief", "Add recipient, occasion, budget, and references."],
-              ["3", "Approve quote", "Giftra reviews the request and confirms the artist."],
-              ["4", "Track delivery", "Chat, preview, revisions, delivery, and review."],
-            ].map(([step, title, text]) => (
-              <div key={step} className="rounded-lg border bg-background p-4">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">{step}</span>
-                <p className="mt-4 font-semibold">{title}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{text}</p>
-              </div>
-            ))}
           </div>
         </section>
 
@@ -909,19 +653,19 @@ export function LandingPage() {
                   <Chip
                     label="All tags"
                     size="small"
-                    color={tag === "all" ? "primary" : "default"}
-                    variant={tag === "all" ? "filled" : "outlined"}
-                    onClick={() => setTag("all")}
+                    color={selectedTags.length === 0 ? "primary" : "default"}
+                    variant={selectedTags.length === 0 ? "filled" : "outlined"}
+                    onClick={() => setSelectedTags([])}
                   />
                   {popularTags.map((item) => (
                     <Chip
                       key={item.value}
                       label={`${item.value} (${item.count})`}
                       size="small"
-                      color={tag === item.value ? "primary" : "default"}
-                      variant={tag === item.value ? "filled" : "outlined"}
+                      color={selectedTags.includes(item.value) ? "primary" : "default"}
+                      variant={selectedTags.includes(item.value) ? "filled" : "outlined"}
                       onClick={() => {
-                        setTag(item.value)
+                        toggleTag(item.value)
                         setSearch("")
                       }}
                     />

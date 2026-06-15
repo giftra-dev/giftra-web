@@ -243,7 +243,7 @@ function CustomerRequestsContent() {
                   <div className="flex items-center gap-2 ml-4">
                     {request.chat_room_id && (
                       <Button asChild size="sm" variant="outline" className="gap-1">
-                        <Link href={`/chat/${request.chat_room_id}`}>
+                        <Link href={`/customer/request/${request.id}`}>
                           <MessageSquare className="w-4 h-4" />
                           Chat
                         </Link>

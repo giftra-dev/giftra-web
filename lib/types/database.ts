@@ -107,6 +107,10 @@ export interface ChatRoom {
   customer_id: string
   artist_id: string | null
   is_active: boolean
+  moderation_status: 'active' | 'paused' | 'ended'
+  moderation_warning: string | null
+  moderated_by_admin_id: string | null
+  moderated_at: string | null
   admin_can_view: boolean
   created_at: string
   last_message_at: string
@@ -333,6 +337,7 @@ export interface CreateRequestInput {
   deadline?: string
   budget_min?: number
   budget_max?: number
+  assigned_artist_id?: string
   inspiration_artwork_id?: string
 }
 

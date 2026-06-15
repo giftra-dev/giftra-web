@@ -38,6 +38,7 @@ interface CreateRequestDialogProps {
   initialCategory?: GiftCategory
   initialBudgetMin?: number
   initialBudgetMax?: number
+  assignedArtistId?: string
   inspirationArtworkId?: string
 }
 
@@ -50,6 +51,7 @@ export function CreateRequestDialog({
   initialCategory,
   initialBudgetMin,
   initialBudgetMax,
+  assignedArtistId,
   inspirationArtworkId,
 }: CreateRequestDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
@@ -127,6 +129,7 @@ export function CreateRequestDialog({
         budget_max: maxBudget,
         deadline: deadline || undefined,
         reference_images: referenceImages.filter((url): url is string => Boolean(url)),
+        assigned_artist_id: assignedArtistId,
         inspiration_artwork_id: inspirationArtworkId,
       })
 

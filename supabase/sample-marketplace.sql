@@ -93,6 +93,12 @@ BEGIN
     email,
     encrypted_password,
     email_confirmed_at,
+    confirmation_token,
+    recovery_token,
+    email_change_token_new,
+    email_change_token_current,
+    phone_change_token,
+    reauthentication_token,
     raw_app_meta_data,
     raw_user_meta_data,
     created_at,
@@ -106,12 +112,30 @@ BEGIN
     'admin@giftra.co.in',
     crypt('Password123!', gen_salt('bf')),
     NOW(),
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
     '{"provider":"email","providers":["email"]}'::JSONB,
     '{"role":"admin","full_name":"Giftra Admin"}'::JSONB,
     NOW(),
     NOW()
   )
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    encrypted_password = EXCLUDED.encrypted_password,
+    email_confirmed_at = EXCLUDED.email_confirmed_at,
+    confirmation_token = '',
+    recovery_token = '',
+    email_change_token_new = '',
+    email_change_token_current = '',
+    phone_change_token = '',
+    reauthentication_token = '',
+    raw_app_meta_data = EXCLUDED.raw_app_meta_data,
+    raw_user_meta_data = EXCLUDED.raw_user_meta_data,
+    updated_at = NOW();
 
   INSERT INTO auth.identities (
     id,
@@ -126,7 +150,7 @@ BEGIN
   VALUES (
     '00000000-0000-0000-0000-000000000001',
     '00000000-0000-0000-0000-000000000001',
-    '00000000-0000-0000-0000-000000000001',
+    'admin@giftra.co.in',
     'email',
     jsonb_build_object(
       'sub', '00000000-0000-0000-0000-000000000001',
@@ -165,6 +189,12 @@ BEGIN
       email,
       encrypted_password,
       email_confirmed_at,
+      confirmation_token,
+      recovery_token,
+      email_change_token_new,
+      email_change_token_current,
+      phone_change_token,
+      reauthentication_token,
       raw_app_meta_data,
       raw_user_meta_data,
       created_at,
@@ -178,12 +208,30 @@ BEGIN
       'artist' || i || '@giftra.test',
       crypt('Password123!', gen_salt('bf')),
       NOW(),
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
       '{"provider":"email","providers":["email"]}'::JSONB,
       jsonb_build_object('role', 'artist', 'full_name', artist_names[i]),
       NOW(),
       NOW()
     )
-    ON CONFLICT (id) DO NOTHING;
+    ON CONFLICT (id) DO UPDATE SET
+      email = EXCLUDED.email,
+      encrypted_password = EXCLUDED.encrypted_password,
+      email_confirmed_at = EXCLUDED.email_confirmed_at,
+      confirmation_token = '',
+      recovery_token = '',
+      email_change_token_new = '',
+      email_change_token_current = '',
+      phone_change_token = '',
+      reauthentication_token = '',
+      raw_app_meta_data = EXCLUDED.raw_app_meta_data,
+      raw_user_meta_data = EXCLUDED.raw_user_meta_data,
+      updated_at = NOW();
 
     INSERT INTO auth.identities (
       id,
@@ -198,7 +246,7 @@ BEGIN
     VALUES (
       artist_id,
       artist_id,
-      artist_id::TEXT,
+      'artist' || i || '@giftra.test',
       'email',
       jsonb_build_object(
         'sub', artist_id::TEXT,
@@ -260,6 +308,12 @@ BEGIN
       email,
       encrypted_password,
       email_confirmed_at,
+      confirmation_token,
+      recovery_token,
+      email_change_token_new,
+      email_change_token_current,
+      phone_change_token,
+      reauthentication_token,
       raw_app_meta_data,
       raw_user_meta_data,
       created_at,
@@ -273,12 +327,30 @@ BEGIN
       'customer' || i || '@giftra.test',
       crypt('Password123!', gen_salt('bf')),
       NOW(),
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
       '{"provider":"email","providers":["email"]}'::JSONB,
       jsonb_build_object('role', 'customer', 'full_name', 'Sample Customer ' || i),
       NOW(),
       NOW()
     )
-    ON CONFLICT (id) DO NOTHING;
+    ON CONFLICT (id) DO UPDATE SET
+      email = EXCLUDED.email,
+      encrypted_password = EXCLUDED.encrypted_password,
+      email_confirmed_at = EXCLUDED.email_confirmed_at,
+      confirmation_token = '',
+      recovery_token = '',
+      email_change_token_new = '',
+      email_change_token_current = '',
+      phone_change_token = '',
+      reauthentication_token = '',
+      raw_app_meta_data = EXCLUDED.raw_app_meta_data,
+      raw_user_meta_data = EXCLUDED.raw_user_meta_data,
+      updated_at = NOW();
 
     INSERT INTO auth.identities (
       id,
@@ -293,7 +365,7 @@ BEGIN
     VALUES (
       customer_id,
       customer_id,
-      customer_id::TEXT,
+      'customer' || i || '@giftra.test',
       'email',
       jsonb_build_object(
         'sub', customer_id::TEXT,

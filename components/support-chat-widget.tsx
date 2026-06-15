@@ -50,6 +50,11 @@ export function SupportChatWidget() {
     let mounted = true
     setIsLoading(true)
     setError("")
+    const timeout = window.setTimeout(() => {
+      if (!mounted) return
+      setIsLoading(false)
+      setError("Unable to start support chat. Please refresh or contact Giftra after signing in again.")
+    }, 12000)
 
     getOrCreateSupportConversation()
       .then(async ({ data, error: conversationError }) => {
@@ -59,17 +64,21 @@ export function SupportChatWidget() {
         }
         setConversation(data)
         setMessages(await getSupportMessages(data.id))
+        window.clearTimeout(timeout)
       })
       .catch((err) => {
         if (!mounted) return
+        window.clearTimeout(timeout)
         setError(err instanceof Error ? err.message : "Unable to start support chat.")
       })
       .finally(() => {
+        window.clearTimeout(timeout)
         if (mounted) setIsLoading(false)
       })
 
     return () => {
       mounted = false
+      window.clearTimeout(timeout)
     }
   }, [conversation, open, profile?.role, userId])
 
@@ -89,7 +98,7 @@ export function SupportChatWidget() {
 
   const panelTitle = useMemo(() => {
     if (!userId) return "Chat with Giftra"
-    return conversation?.subject || "Giftra support"
+    return conversation?.subject || "Chat with Giftra"
   }, [conversation?.subject, userId])
 
   if (profile?.role === "admin") return null
@@ -197,7 +206,7 @@ export function SupportChatWidget() {
         onClick={() => setOpen((current) => !current)}
       >
         <MessageCircle className="mr-2 h-5 w-5" />
-        Chat
+        Chat with Giftra
       </Button>
     </div>
   )

@@ -78,7 +78,7 @@ function CustomerChatsContent() {
                   return (
                     <Link
                       key={chat.id}
-                      href={`/chat/${chat.id}`}
+                      href={`/customer/request/${chat.request_id}`}
                       className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors"
                     >
                       <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
