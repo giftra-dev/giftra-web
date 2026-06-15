@@ -31,6 +31,7 @@ export default function PublicArtistPortfolioPage({
   const [favorites, setFavorites] = useState<string[]>([])
   const [selectedArtwork, setSelectedArtwork] = useState<ArtistArtwork | null>(null)
   const [requestOpen, setRequestOpen] = useState(false)
+  const [artistRequestOpen, setArtistRequestOpen] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -154,7 +155,7 @@ export default function PublicArtistPortfolioPage({
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold">Sample Work</h2>
           {isLoggedIn ? (
-            <Button onClick={() => artworks[0] && startRequest(artworks[0])} disabled={artworks.length === 0}>
+            <Button onClick={() => artworks[0] ? startRequest(artworks[0]) : setArtistRequestOpen(true)}>
               Request This Artist
             </Button>
           ) : (
@@ -262,6 +263,17 @@ export default function PublicArtistPortfolioPage({
           initialBudgetMin={selectedArtwork.price_min || undefined}
           initialBudgetMax={selectedArtwork.price_max || selectedArtwork.price_min || undefined}
           inspirationArtworkId={selectedArtwork.id}
+        />
+      )}
+
+      {artist && (
+        <CreateRequestDialog
+          open={artistRequestOpen}
+          onOpenChange={setArtistRequestOpen}
+          initialTitle={`Custom gift by ${artistName}`}
+          initialDescription={`I would like to discuss a custom gift with ${artistName}.`}
+          initialCategory={(artist.specialties?.[0] || "portrait") as GiftCategory}
+          assignedArtistId={artist.id}
         />
       )}
     </main>

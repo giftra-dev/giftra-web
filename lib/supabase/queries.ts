@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
+import { sendEmailNotification } from '@/lib/email/notifications'
 import type {
   Profile,
   Request,
@@ -28,6 +29,12 @@ import type {
   GiftCategory,
   OrderStatus,
 } from '@/lib/types/database'
+
+type MaybeEmailRelation = { email?: string } | { email?: string }[] | null | undefined
+
+function relationEmail(relation: MaybeEmailRelation) {
+  return Array.isArray(relation) ? relation[0]?.email || '' : relation?.email || ''
+}
 
 // =====================================================
 // AUTH FUNCTIONS
@@ -281,11 +288,12 @@ export async function createRequest(
   }
 
   let inspirationArtworkId = input.inspiration_artwork_id
+  let assignedArtistId = input.assigned_artist_id
 
   if (inspirationArtworkId) {
     const { data: artwork } = await supabase
       .from('artist_artworks')
-      .select('id')
+      .select('id, artist_id')
       .eq('id', inspirationArtworkId)
       .eq('is_public', true)
       .eq('approval_status', 'approved')
@@ -293,8 +301,22 @@ export async function createRequest(
 
     if (artwork) {
       inspirationArtworkId = artwork.id
+      assignedArtistId = artwork.artist_id
     } else {
       inspirationArtworkId = undefined
+    }
+  }
+
+  if (assignedArtistId) {
+    const { data: artist } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', assignedArtistId)
+      .eq('role', 'artist')
+      .maybeSingle()
+
+    if (!artist) {
+      assignedArtistId = undefined
     }
   }
 
@@ -302,6 +324,7 @@ export async function createRequest(
     .from('requests')
     .insert({
       customer_id: user.id,
+      assigned_artist_id: assignedArtistId,
       title: input.title,
       description: input.description,
       category: input.category,
@@ -312,10 +335,40 @@ export async function createRequest(
       budget_min: input.budget_min,
       budget_max: input.budget_max,
       inspiration_artwork_id: inspirationArtworkId,
-      status: 'pending_review',
+      status: assignedArtistId ? 'assigned' : 'pending_review',
+      assigned_at: assignedArtistId ? new Date().toISOString() : undefined,
     })
     .select()
     .single()
+
+  if (data && assignedArtistId) {
+    const { data: chatRoom, error: chatError } = await supabase
+      .from('chat_rooms')
+      .upsert({
+        request_id: data.id,
+        customer_id: user.id,
+        artist_id: assignedArtistId,
+        is_active: true,
+        moderation_status: 'active',
+        admin_can_view: true,
+        last_message_at: new Date().toISOString(),
+      }, { onConflict: 'request_id' })
+      .select('id')
+      .single()
+
+    if (chatError) {
+      console.error('Failed to create request chat room:', chatError)
+    }
+
+    if (chatRoom) {
+      await supabase.from('messages').insert({
+        chat_room_id: chatRoom.id,
+        sender_id: user.id,
+        message_type: 'system',
+        content: 'Chat is open before payment so customer and artist can agree on scope and price.',
+      })
+    }
+  }
   
   return { data, error: error as Error | null }
 }
@@ -438,7 +491,7 @@ export async function assignArtist(
       updated_at: new Date().toISOString(),
     })
     .eq('id', requestId)
-    .select('*, customer:profiles!requests_customer_id_fkey(*)')
+    .select('*, customer:profiles!requests_customer_id_fkey(*), assigned_artist:profiles!requests_assigned_artist_id_fkey(*)')
     .single()
   
   if (requestError) {
@@ -448,13 +501,15 @@ export async function assignArtist(
   // Create chat room
   const { data: chatRoom, error: chatError } = await supabase
     .from('chat_rooms')
-    .insert({
+    .upsert({
       request_id: requestId,
       customer_id: request.customer_id,
       artist_id: artistId,
       is_active: true,
+      moderation_status: 'active',
       admin_can_view: true,
-    })
+      last_message_at: new Date().toISOString(),
+    }, { onConflict: 'request_id' })
     .select()
     .single()
 
@@ -466,7 +521,7 @@ export async function assignArtist(
   await supabase.from('notifications').insert({
     user_id: request.customer_id,
     title: 'Artist Assigned',
-    message: `An artist has been assigned to your request "${request.title}". Please proceed with payment to start the collaboration.`,
+    message: `An artist has been assigned to your request "${request.title}". Discuss details and complete payment after the price is fixed.`,
     link: `/customer/request/${requestId}`,
   })
 
@@ -474,11 +529,92 @@ export async function assignArtist(
   await supabase.from('notifications').insert({
     user_id: artistId,
     title: 'New Assignment',
-    message: `You have been assigned to a new request: "${request.title}". The customer will pay soon to start collaboration.`,
+    message: `You have been assigned to a new request: "${request.title}". Discuss details and agree on the final price.`,
     link: `/artist/orders`,
   })
 
+  await Promise.all([
+    sendEmailNotification({
+      to: request.customer?.email || '',
+      subject: 'Your Giftra artist is ready',
+      preview: `An artist has been assigned to "${request.title}".`,
+      body: `An artist has been assigned to your request "${request.title}". You can now discuss the details and final price before payment.`,
+      actionUrl: `/customer/request/${requestId}`,
+      actionLabel: 'Open request',
+    }),
+    sendEmailNotification({
+      to: request.assigned_artist?.email || '',
+      subject: 'New Giftra request assigned',
+      preview: `You have a new request: "${request.title}".`,
+      body: `You have been assigned to "${request.title}". Please discuss the scope with the customer and fix the final price when ready.`,
+      actionUrl: '/artist/orders',
+      actionLabel: 'Open orders',
+    }),
+  ])
+
   return { data: request, error: null, chatRoom }
+}
+
+export async function updateRequestQuote(
+  requestId: string,
+  quotedPrice: number,
+  note?: string
+): Promise<{ data: Request | null; error: Error | null }> {
+  const supabase = createClient()
+  const { user } = await getCurrentUser()
+
+  if (!user) {
+    return { data: null, error: new Error('Not authenticated') }
+  }
+
+  const { data, error } = await supabase
+    .from('requests')
+    .update({
+      quoted_price: quotedPrice,
+      final_price: quotedPrice,
+      admin_notes: note,
+      status: 'assigned',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', requestId)
+    .select()
+    .single()
+
+  if (data) {
+    const [{ data: chatRoom }, { data: requestWithPeople }] = await Promise.all([
+      supabase
+      .from('chat_rooms')
+      .select('id')
+      .eq('request_id', requestId)
+      .maybeSingle(),
+      supabase
+        .from('requests')
+        .select('title, customer:profiles!requests_customer_id_fkey(email), assigned_artist:profiles!requests_assigned_artist_id_fkey(email)')
+        .eq('id', requestId)
+        .maybeSingle(),
+    ])
+
+    if (chatRoom) {
+      await supabase.from('messages').insert({
+        chat_room_id: chatRoom.id,
+        sender_id: user.id,
+        message_type: 'quote',
+        content: note || `Final price fixed at ${quotedPrice}.`,
+        quote_amount: quotedPrice,
+      })
+    }
+
+    await sendEmailNotification({
+      to: relationEmail(requestWithPeople?.customer),
+      subject: 'Your Giftra quote is ready',
+      preview: `Final price fixed at ${quotedPrice}.`,
+      body: `The final price for "${requestWithPeople?.title || 'your custom gift'}" has been fixed at ${quotedPrice}. You can review the discussion and complete payment when ready.`,
+      actionUrl: `/customer/request/${requestId}`,
+      actionLabel: 'Review quote',
+    })
+  }
+
+  return { data: data as Request | null, error: error as Error | null }
 }
 
 export async function rejectRequest(
@@ -571,6 +707,21 @@ export async function createOrder(
       title: 'Payment Received',
       message: `Payment received for order ${data.order_number}. You can now start working on the project.`,
       link: `/artist/orders`,
+    })
+
+    const { data: artist } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', request.assigned_artist_id)
+      .maybeSingle()
+
+    await sendEmailNotification({
+      to: artist?.email || '',
+      subject: 'Payment received on Giftra',
+      preview: `Order ${data.order_number} is paid.`,
+      body: `Payment has been received for order ${data.order_number}. You can now start working on the project.`,
+      actionUrl: '/artist/orders',
+      actionLabel: 'Open order',
     })
 
     // Add system message to chat
@@ -697,6 +848,33 @@ export async function updateOrderStatus(
     .eq('id', orderId)
     .select()
     .single()
+
+  if (data && !error) {
+    const { data: orderWithPeople } = await supabase
+      .from('orders')
+      .select('order_number, status, customer:profiles!orders_customer_id_fkey(email), artist:profiles!orders_artist_id_fkey(email)')
+      .eq('id', orderId)
+      .maybeSingle()
+
+    await Promise.all([
+      sendEmailNotification({
+        to: relationEmail(orderWithPeople?.customer),
+        subject: `Giftra order ${orderWithPeople?.order_number || ''} updated`,
+        preview: `Order status changed to ${status}.`,
+        body: `Your Giftra order ${orderWithPeople?.order_number || ''} is now ${status.replaceAll('_', ' ')}.`,
+        actionUrl: '/customer/requests',
+        actionLabel: 'View requests',
+      }),
+      sendEmailNotification({
+        to: relationEmail(orderWithPeople?.artist),
+        subject: `Giftra order ${orderWithPeople?.order_number || ''} updated`,
+        preview: `Order status changed to ${status}.`,
+        body: `Giftra order ${orderWithPeople?.order_number || ''} is now ${status.replaceAll('_', ' ')}.`,
+        actionUrl: '/artist/orders',
+        actionLabel: 'View orders',
+      }),
+    ])
+  }
   
   return { data, error: error as Error | null }
 }
@@ -1067,6 +1245,25 @@ export async function updateArtworkApproval(
     .select()
     .single()
 
+  if (data && !error) {
+    const { data: artworkWithArtist } = await supabase
+      .from('artist_artworks')
+      .select('title, artist:profiles!artist_artworks_artist_id_fkey(email)')
+      .eq('id', artworkId)
+      .maybeSingle()
+
+    await sendEmailNotification({
+      to: relationEmail(artworkWithArtist?.artist),
+      subject: approvalStatus === 'approved' ? 'Your Giftra artwork is approved' : 'Your Giftra artwork needs changes',
+      preview: artworkWithArtist?.title || 'Artwork review complete',
+      body: approvalStatus === 'approved'
+        ? `"${artworkWithArtist?.title || 'Your artwork'}" has been approved and can now appear in your portfolio.`
+        : `"${artworkWithArtist?.title || 'Your artwork'}" was reviewed by Giftra. ${approvalNotes || 'Please check the admin note and update it before resubmitting.'}`,
+      actionUrl: '/artist/settings',
+      actionLabel: 'Open portfolio',
+    })
+  }
+
   return { data: data as ArtistArtwork | null, error: error as Error | null }
 }
 
@@ -1167,7 +1364,7 @@ export async function toggleFeedbackTestimonial(
 }
 
 export async function getOrCreateSupportConversation(
-  subject = 'Customer support'
+  subject = 'Chat with Giftra'
 ): Promise<{ data: SupportConversation | null; error: Error | null }> {
   const supabase = createClient()
   const { user } = await getCurrentUser()
@@ -1230,6 +1427,23 @@ export async function sendSupportMessage(
     })
     .select()
     .single()
+
+  if (data && !error && profile?.role === 'admin') {
+    const { data: conversation } = await supabase
+      .from('support_conversations')
+      .select('subject, customer:profiles!support_conversations_customer_id_fkey(email)')
+      .eq('id', conversationId)
+      .maybeSingle()
+
+    await sendEmailNotification({
+      to: relationEmail(conversation?.customer),
+      subject: 'Giftra replied to your support chat',
+      preview: conversation?.subject || 'Support reply',
+      body: message,
+      actionUrl: '/',
+      actionLabel: 'Open Giftra',
+    })
+  }
 
   return { data: data as SupportMessage | null, error: error as Error | null }
 }
@@ -1295,6 +1509,21 @@ export async function markOrderPaid(
       title: 'Payment Received',
       message: `Payment received for order ${order.order_number}. You can now start working!`,
       link: `/artist/orders`,
+    })
+
+    const { data: artist } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', order.artist_id)
+      .maybeSingle()
+
+    await sendEmailNotification({
+      to: artist?.email || '',
+      subject: 'Payment received on Giftra',
+      preview: `Order ${order.order_number} is paid.`,
+      body: `Payment has been received for order ${order.order_number}. You can now start working.`,
+      actionUrl: '/artist/orders',
+      actionLabel: 'Open orders',
     })
   }
 
@@ -1368,7 +1597,6 @@ export async function getAllChatRooms(): Promise<ChatRoomWithRelations[]> {
       customer:profiles!chat_rooms_customer_id_fkey(id, full_name, avatar_url),
       artist:profiles!chat_rooms_artist_id_fkey(id, full_name, avatar_url)
     `)
-    .eq('is_active', true)
     .order('last_message_at', { ascending: false })
   
   return (data || []) as ChatRoomWithRelations[]
@@ -1402,6 +1630,19 @@ export async function sendMessage(
   if (!user) {
     return { data: null, error: new Error('Not authenticated') }
   }
+
+  const { data: room } = await supabase
+    .from('chat_rooms')
+    .select('moderation_status, moderation_warning')
+    .eq('id', input.chat_room_id)
+    .maybeSingle()
+
+  if (room && room.moderation_status !== 'active') {
+    return {
+      data: null,
+      error: new Error(room.moderation_warning || `Chat is ${room.moderation_status} by Giftra admin.`),
+    }
+  }
   
   const { data, error } = await supabase
     .from('messages')
@@ -1426,6 +1667,39 @@ export async function sendMessage(
   }
   
   return { data, error: error as Error | null }
+}
+
+export async function updateChatModeration(
+  chatRoomId: string,
+  moderationStatus: ChatRoom['moderation_status'],
+  warning: string
+): Promise<{ data: ChatRoom | null; error: Error | null }> {
+  const supabase = createClient()
+  const { user } = await getCurrentUser()
+
+  const { data, error } = await supabase
+    .from('chat_rooms')
+    .update({
+      moderation_status: moderationStatus,
+      moderation_warning: warning || null,
+      moderated_by_admin_id: user?.id || null,
+      moderated_at: new Date().toISOString(),
+      is_active: moderationStatus !== 'ended',
+    })
+    .eq('id', chatRoomId)
+    .select()
+    .single()
+
+  if (data) {
+    await supabase.from('messages').insert({
+      chat_room_id: chatRoomId,
+      sender_id: user?.id || data.customer_id,
+      message_type: 'system',
+      content: warning || `Giftra admin ${moderationStatus} this chat.`,
+    })
+  }
+
+  return { data: data as ChatRoom | null, error: error as Error | null }
 }
 
 export async function markMessagesAsRead(

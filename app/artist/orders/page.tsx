@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { RequestChatPanel } from "@/components/request-chat-panel"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -29,8 +29,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { getArtistOrders, updateOrderStatus, getChatRoomByRequestId, getCurrentUser } from "@/lib/supabase/queries"
-import type { OrderStatus } from "@/lib/types/database"
+import { getArtistOrders, updateOrderStatus, getChatRoomByRequestId, getCurrentUser, getChatRoom } from "@/lib/supabase/queries"
+import type { ChatRoomWithRelations, OrderStatus } from "@/lib/types/database"
 
 const orderStatusColors: Record<OrderStatus, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -91,6 +91,7 @@ function ArtistOrdersContent() {
   const [search, setSearch] = useState("")
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<OrderWithDetails | null>(null)
+  const [selectedChat, setSelectedChat] = useState<ChatRoomWithRelations | null>(null)
   const [trackingNumber, setTrackingNumber] = useState("")
   const [updating, setUpdating] = useState(false)
   
@@ -127,6 +128,14 @@ function ArtistOrdersContent() {
     )
     setOrders(ordersWithChat as OrderWithDetails[])
     setLoading(false)
+  }
+
+  const openOrderChat = async (chatRoomId: string) => {
+    const chat = await getChatRoom(chatRoomId)
+    setSelectedChat(chat)
+    window.setTimeout(() => {
+      document.getElementById("artist-order-chat")?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 50)
   }
 
   const handleStatusUpdate = async (order: OrderWithDetails, newStatus: OrderStatus) => {
@@ -249,6 +258,31 @@ function ArtistOrdersContent() {
         />
       </div>
 
+      {selectedChat?.request && (
+        <section id="artist-order-chat">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Order discussion</h2>
+              <p className="text-sm text-muted-foreground">{selectedChat.request.title}</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedChat(null)}>
+              Close
+            </Button>
+          </div>
+          <RequestChatPanel
+            chatRoom={selectedChat}
+            request={selectedChat.request}
+            onChanged={async () => {
+              if (selectedChat) {
+                const chat = await getChatRoom(selectedChat.id)
+                setSelectedChat(chat)
+              }
+              await loadOrders()
+            }}
+          />
+        </section>
+      )}
+
       {/* Orders Tabs */}
       <Tabs defaultValue="active" className="space-y-4">
         <TabsList>
@@ -302,11 +336,9 @@ function ArtistOrdersContent() {
                         </div>
                         <div className="flex flex-col gap-2">
                           {order.chat_room_id && (
-                            <Button asChild size="sm" className="w-full gap-1">
-                              <Link href={`/chat/${order.chat_room_id}`}>
-                                <MessageSquare className="w-4 h-4" />
-                                Chat
-                              </Link>
+                            <Button size="sm" className="w-full gap-1" onClick={() => openOrderChat(order.chat_room_id!)}>
+                              <MessageSquare className="w-4 h-4" />
+                              Chat
                             </Button>
                           )}
                           {order.status === "paid" && (

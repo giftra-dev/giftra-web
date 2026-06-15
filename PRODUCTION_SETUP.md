@@ -122,6 +122,15 @@ PAYMENT_PROVIDER=razorpay_or_stripe
 PAYMENT_WEBHOOK_SECRET=your-webhook-secret
 ```
 
+Email notifications use Resend when configured:
+
+```bash
+RESEND_API_KEY=your-resend-api-key
+GIFTRA_EMAIL_FROM=Giftra <notifications@giftra.co.in>
+```
+
+If `RESEND_API_KEY` is missing, the app skips email delivery and continues with in-app notifications.
+
 Never expose the service role key in client code.
 
 ## 6. Supabase Auth URLs

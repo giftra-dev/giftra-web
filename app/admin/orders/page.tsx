@@ -1,8 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { RequestChatPanel } from "@/components/request-chat-panel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { getAllChatRooms, getAllOrders, updateOrderStatus } from "@/lib/supabase/queries"
+import { getAllChatRooms, getAllOrders, getChatRoom, updateOrderStatus } from "@/lib/supabase/queries"
 import type { ChatRoomWithRelations, OrderStatus, OrderWithRelations } from "@/lib/types/database"
 import { ORDER_STATUS_LABELS } from "@/lib/types/database"
 import { Clock, MessageSquare, Package, Search, Truck, User } from "lucide-react"
@@ -54,6 +54,7 @@ function AdminOrdersContent() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [isLoading, setIsLoading] = useState(true)
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null)
+  const [selectedChat, setSelectedChat] = useState<ChatRoomWithRelations | null>(null)
 
   const loadData = useCallback(async () => {
     try {
@@ -103,6 +104,14 @@ function AdminOrdersContent() {
     setUpdatingOrderId(null)
   }
 
+  const openOrderChat = async (chatRoomId: string) => {
+    const chat = await getChatRoom(chatRoomId)
+    setSelectedChat(chat)
+    window.setTimeout(() => {
+      document.getElementById("admin-order-chat")?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 50)
+  }
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -147,6 +156,31 @@ function AdminOrdersContent() {
             </SelectContent>
           </Select>
         </div>
+
+        {selectedChat?.request && (
+          <section id="admin-order-chat">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Order chat monitor</h2>
+                <p className="text-sm text-muted-foreground">{selectedChat.request.title}</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedChat(null)}>
+                Close
+              </Button>
+            </div>
+            <RequestChatPanel
+              chatRoom={selectedChat}
+              request={selectedChat.request}
+              onChanged={async () => {
+                if (selectedChat) {
+                  const chat = await getChatRoom(selectedChat.id)
+                  setSelectedChat(chat)
+                }
+                await loadData()
+              }}
+            />
+          </section>
+        )}
 
         <Card>
           <CardContent className="p-0">
@@ -212,11 +246,9 @@ function AdminOrdersContent() {
                             </SelectContent>
                           </Select>
                           {chatRoom && (
-                            <Button asChild size="sm" variant="outline" className="gap-1">
-                              <Link href={`/chat/${chatRoom.id}`}>
-                                <MessageSquare className="w-4 h-4" />
-                                Chat
-                              </Link>
+                            <Button size="sm" variant="outline" className="gap-1" onClick={() => openOrderChat(chatRoom.id)}>
+                              <MessageSquare className="w-4 h-4" />
+                              Chat
                             </Button>
                           )}
                         </div>

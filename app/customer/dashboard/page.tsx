@@ -218,7 +218,7 @@ function CustomerDashboardContent() {
                     <div className="flex items-center gap-2 ml-4">
                       {chatRoom && (
                         <Button asChild size="sm" variant="outline" className="gap-1">
-                          <Link href={`/chat/${chatRoom.id}`}>
+                          <Link href={`/customer/request/${request.id}`}>
                             <MessageSquare className="w-4 h-4" />
                             Chat
                           </Link>

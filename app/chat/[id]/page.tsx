@@ -34,6 +34,7 @@ import {
   createOrder,
   updateOrderStatus,
   updateOrderAndRequestStatus,
+  updateChatModeration,
   subscribeToMessages,
   uploadFileToStorage,
 } from "@/lib/supabase/queries"
@@ -50,6 +51,7 @@ const chatStatusColors: Record<string, string> = {
 }
 
 const mockPaymentsEnabled = process.env.NEXT_PUBLIC_ENABLE_MOCK_PAYMENTS === "true"
+const maxChatFileSize = 10 * 1024 * 1024
 
 function ChatPageContent({ chatId }: { chatId: string }) {
   const router = useRouter()
@@ -60,6 +62,7 @@ function ChatPageContent({ chatId }: { chatId: string }) {
   const [isLoading, setIsLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
   const [actionError, setActionError] = useState("")
+  const [moderationWarning, setModerationWarning] = useState("")
 
   const [chatRoom, setChatRoom] = useState<ChatRoomWithRelations | null>(null)
   const [messages, setMessages] = useState<MessageWithSender[]>([])
@@ -167,12 +170,11 @@ function ChatPageContent({ chatId }: { chatId: string }) {
   const isCustomer = currentUser.role === "customer"
   const isArtist = currentUser.role === "artist"
   
-  // Chat is locked if no order exists or order is awaiting payment
-  const isChatLocked = !order || order.status === 'awaiting_payment' || order.status === 'draft'
-  const lockReason = !order 
-    ? "Chat will unlock after payment is completed." 
-    : order.status === 'awaiting_payment' 
-      ? "Chat will unlock after payment is completed."
+  const isChatLocked = !chatRoom.is_active || chatRoom.moderation_status !== "active"
+  const lockReason = chatRoom.moderation_status !== "active"
+    ? chatRoom.moderation_warning || "Giftra admin has paused this chat for guideline review."
+    : !chatRoom.is_active
+      ? "Chat is not active."
       : null
 
   const handleSendMessage = async () => {
@@ -254,9 +256,25 @@ function ChatPageContent({ chatId }: { chatId: string }) {
     await loadData()
   }
 
+  const handleModerateChat = async (status: "paused" | "ended" | "active") => {
+    const warning = moderationWarning || "Giftra admin has reviewed this chat for guideline compliance."
+    const { error } = await updateChatModeration(chatId, status, warning)
+    if (error) {
+      setActionError(error.message)
+      return
+    }
+    await loadData()
+  }
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file || !currentUser || isChatLocked || isSending) return
+
+    if (file.size > maxChatFileSize) {
+      setActionError("Files must be 10 MB or smaller.")
+      event.target.value = ""
+      return
+    }
 
     setIsSending(true)
     setActionError("")
@@ -265,7 +283,7 @@ function ChatPageContent({ chatId }: { chatId: string }) {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-")
       const { url, error: uploadError } = await uploadFileToStorage(
         "order-artwork",
-        `${chatId}/${currentUser.id}/${Date.now()}-${safeName}`,
+        `${currentUser.id}/${chatId}/${Date.now()}-${safeName}`,
         file
       )
       if (uploadError) throw uploadError
@@ -470,7 +488,7 @@ function ChatPageContent({ chatId }: { chatId: string }) {
                   ref={fileInputRef}
                   type="file"
                   className="sr-only"
-                  accept="image/*,.pdf"
+                  accept="image/*,video/*,.pdf"
                   onChange={handleFileUpload}
                 />
                 <Input
@@ -590,9 +608,19 @@ function ChatPageContent({ chatId }: { chatId: string }) {
                   )}
 
                   {isAdmin && (
-                    <p className="text-sm text-muted-foreground text-center py-2">
-                      Admin view only
-                    </p>
+                    <div className="space-y-2 border-t pt-3">
+                      <p className="text-xs text-muted-foreground">Admin moderation</p>
+                      <Input
+                        value={moderationWarning}
+                        onChange={(event) => setModerationWarning(event.target.value)}
+                        placeholder="Warning message to customer and artist"
+                      />
+                      <div className="grid grid-cols-3 gap-2">
+                        <Button size="sm" variant="outline" onClick={() => handleModerateChat("active")}>Resume</Button>
+                        <Button size="sm" variant="outline" onClick={() => handleModerateChat("paused")}>Pause</Button>
+                        <Button size="sm" variant="destructive" onClick={() => handleModerateChat("ended")}>End</Button>
+                      </div>
+                    </div>
                   )}
                 </CardContent>
               </Card>
