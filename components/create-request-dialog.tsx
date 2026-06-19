@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   Dialog,
@@ -23,11 +23,12 @@ import {
 import { createRequest, getCurrentUser, uploadFileToStorage } from "@/lib/supabase/queries"
 import type { GiftCategory } from "@/lib/types/database"
 import { CATEGORY_LABELS } from "@/lib/types/database"
-import { Calendar, DollarSign, Upload } from "lucide-react"
+import { Calendar, DollarSign, Gift, MapPin, Sparkles, Upload } from "lucide-react"
 
 const categories: { label: string; value: GiftCategory }[] = Object.entries(CATEGORY_LABELS).map(
   ([value, label]) => ({ value: value as GiftCategory, label })
 )
+const draftKey = "giftra:create-request-draft"
 
 interface CreateRequestDialogProps {
   open: boolean
@@ -60,6 +61,8 @@ export function CreateRequestDialog({
   const [title, setTitle] = useState(initialTitle || "")
   const [category, setCategory] = useState<GiftCategory | "">(initialCategory || "")
   const [description, setDescription] = useState(initialDescription || "")
+  const [personalization, setPersonalization] = useState("")
+  const [deliveryAddress, setDeliveryAddress] = useState("")
   const [recipientName, setRecipientName] = useState("")
   const [occasion, setOccasion] = useState("")
   const [budgetMin, setBudgetMin] = useState(initialBudgetMin?.toString() || "")
@@ -67,10 +70,51 @@ export function CreateRequestDialog({
   const [deadline, setDeadline] = useState("")
   const [referenceFiles, setReferenceFiles] = useState<File[]>([])
 
+  useEffect(() => {
+    if (!open || initialTitle || initialDescription || inspirationArtworkId) return
+    const saved = localStorage.getItem(draftKey)
+    if (!saved) return
+    try {
+      const draft = JSON.parse(saved) as Record<string, string>
+      setTitle(draft.title || "")
+      setCategory((draft.category as GiftCategory) || "")
+      setDescription(draft.description || "")
+      setPersonalization(draft.personalization || "")
+      setDeliveryAddress(draft.deliveryAddress || "")
+      setRecipientName(draft.recipientName || "")
+      setOccasion(draft.occasion || "")
+      setBudgetMin(draft.budgetMin || "")
+      setBudgetMax(draft.budgetMax || "")
+      setDeadline(draft.deadline || "")
+    } catch {
+      localStorage.removeItem(draftKey)
+    }
+  }, [initialDescription, initialTitle, inspirationArtworkId, open])
+
+  const draftPayload = useMemo(() => ({
+    title,
+    category,
+    description,
+    personalization,
+    deliveryAddress,
+    recipientName,
+    occasion,
+    budgetMin,
+    budgetMax,
+    deadline,
+  }), [budgetMax, budgetMin, category, deadline, deliveryAddress, description, occasion, personalization, recipientName, title])
+
+  useEffect(() => {
+    if (!open) return
+    localStorage.setItem(draftKey, JSON.stringify(draftPayload))
+  }, [draftPayload, open])
+
   const resetForm = () => {
     setTitle(initialTitle || "")
     setCategory(initialCategory || "")
     setDescription(initialDescription || "")
+    setPersonalization("")
+    setDeliveryAddress("")
     setRecipientName("")
     setOccasion("")
     setBudgetMin(initialBudgetMin?.toString() || "")
@@ -78,6 +122,7 @@ export function CreateRequestDialog({
     setDeadline("")
     setReferenceFiles([])
     setError("")
+    localStorage.removeItem(draftKey)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -122,7 +167,11 @@ export function CreateRequestDialog({
       const { data, error: requestError } = await createRequest({
         title: title || `${CATEGORY_LABELS[category]} Request`,
         category,
-        description,
+        description: [
+          description,
+          personalization ? `Personalization details: ${personalization}` : "",
+          deliveryAddress ? `Delivery address/city: ${deliveryAddress}` : "",
+        ].filter(Boolean).join("\n\n"),
         recipient_name: recipientName || undefined,
         occasion: occasion || undefined,
         budget_min: minBudget,
@@ -163,7 +212,7 @@ export function CreateRequestDialog({
         <DialogHeader>
           <DialogTitle>Create Gift Request</DialogTitle>
           <DialogDescription>
-            Describe the personalized gift you would like to create. Our admin team will review and match you with the perfect artist.
+            Share the recipient, occasion, budget, deadline, references, and personalization details. Giftra reviews the brief, the artist accepts, then you approve the final price before payment.
           </DialogDescription>
         </DialogHeader>
 
@@ -174,69 +223,104 @@ export function CreateRequestDialog({
             </Alert>
           ) : null}
 
-          <div className="space-y-2">
-            <Label htmlFor="title">Title (Optional)</Label>
-            <Input
-              id="title"
-              placeholder="e.g., Family Portrait for Anniversary"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="category">Category *</Label>
-            <Select
-              value={category}
-              onValueChange={(value) => setCategory(value as GiftCategory)}
-              required
-            >
-              <SelectTrigger id="category">
-                <SelectValue placeholder="Select a category" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((cat) => (
-                  <SelectItem key={cat.value} value={cat.value}>
-                    {cat.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="description">Description *</Label>
-            <Textarea
-              id="description"
-              placeholder="Describe your gift idea in detail... (style, colors, size, special requirements)"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={4}
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="recipientName">Recipient Name</Label>
-              <Input
-                id="recipientName"
-                placeholder="Who is this gift for?"
-                value={recipientName}
-                onChange={(e) => setRecipientName(e.target.value)}
-              />
+          <div className="grid gap-2 rounded-lg border bg-muted/40 p-3 text-sm md:grid-cols-3">
+            <div className="flex gap-2">
+              <Gift className="mt-0.5 h-4 w-4 text-primary" />
+              <span>Create a brief</span>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="occasion">Occasion</Label>
-              <Input
-                id="occasion"
-                placeholder="e.g., Birthday, Anniversary"
-                value={occasion}
-                onChange={(e) => setOccasion(e.target.value)}
-              />
+            <div className="flex gap-2">
+              <Sparkles className="mt-0.5 h-4 w-4 text-primary" />
+              <span>Discuss and fix price</span>
+            </div>
+            <div className="flex gap-2">
+              <DollarSign className="mt-0.5 h-4 w-4 text-primary" />
+              <span>Pay after approval</span>
             </div>
           </div>
 
+          <div className="rounded-lg border p-4">
+            <p className="mb-3 text-sm font-semibold">1. Gift idea</p>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="title">Title (Optional)</Label>
+                <Input
+                  id="title"
+                  placeholder="e.g., Family Portrait for Anniversary"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="category">Category *</Label>
+                <Select
+                  value={category}
+                  onValueChange={(value) => setCategory(value as GiftCategory)}
+                  required
+                >
+                  <SelectTrigger id="category">
+                    <SelectValue placeholder="Select a category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.value} value={cat.value}>
+                        {cat.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Description *</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Describe your gift idea in detail... style, colors, size, materials, mood"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border p-4">
+            <p className="mb-3 text-sm font-semibold">2. Recipient and personalization</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="recipientName">Recipient Name</Label>
+                <Input
+                  id="recipientName"
+                  placeholder="Who is this gift for?"
+                  value={recipientName}
+                  onChange={(e) => setRecipientName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="occasion">Occasion</Label>
+                <Input
+                  id="occasion"
+                  placeholder="Birthday, wedding, anniversary..."
+                  value={occasion}
+                  onChange={(e) => setOccasion(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="personalization">Personalization details</Label>
+                <Textarea
+                  id="personalization"
+                  value={personalization}
+                  onChange={(event) => setPersonalization(event.target.value)}
+                  placeholder="Names, dates, message text, colors, size, likes/dislikes..."
+                  rows={3}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border p-4">
+          <p className="mb-3 text-sm font-semibold">3. Budget and delivery</p>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="budgetMin">Min Budget ($) *</Label>
@@ -286,8 +370,23 @@ export function CreateRequestDialog({
               />
             </div>
           </div>
+          <div className="mt-4 space-y-2">
+            <Label htmlFor="deliveryAddress">Delivery address or city</Label>
+            <div className="relative">
+              <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="deliveryAddress"
+                value={deliveryAddress}
+                onChange={(event) => setDeliveryAddress(event.target.value)}
+                placeholder="City, area, or full address if known"
+                className="pl-10"
+              />
+            </div>
+          </div>
+          </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-lg border p-4">
+            <p className="text-sm font-semibold">4. Reference images</p>
             <Label>Reference Images (Optional)</Label>
             <label className="block border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer">
               <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />

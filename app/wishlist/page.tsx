@@ -7,6 +7,7 @@ import { MarketplaceHeader } from "@/components/marketplace/marketplace-header"
 import { readWishlist, writeWishlist } from "@/components/marketplace/utils"
 import { CreateRequestDialog } from "@/components/create-request-dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   getCurrentUser,
   getPublicArtworks,
@@ -24,6 +25,9 @@ export default function WishlistPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [selectedArtwork, setSelectedArtwork] = useState<ArtistArtworkWithArtist | null>(null)
   const [requestOpen, setRequestOpen] = useState(false)
+  const [collectionName, setCollectionName] = useState("")
+  const [collections, setCollections] = useState<Record<string, string[]>>({})
+  const [shareMessage, setShareMessage] = useState("")
 
   useEffect(() => {
     async function loadWishlist() {
@@ -46,6 +50,7 @@ export default function WishlistPage() {
 
       setArtworks(items)
       setIsLoggedIn(Boolean(userData.user))
+      setCollections(JSON.parse(localStorage.getItem("giftra:wishlist-collections") || "{}"))
     }
 
     loadWishlist()
@@ -71,11 +76,27 @@ export default function WishlistPage() {
     }
   }
 
+  const saveCollection = () => {
+    const name = collectionName.trim()
+    if (!name) return
+    const next = { ...collections, [name]: favorites }
+    setCollections(next)
+    localStorage.setItem("giftra:wishlist-collections", JSON.stringify(next))
+    setCollectionName("")
+  }
+
+  const shareWishlist = async () => {
+    const url = `${window.location.origin}/wishlist?items=${favorites.join(",")}`
+    await navigator.clipboard?.writeText(url)
+    setShareMessage("Share link copied.")
+  }
+
   return (
     <main className="min-h-screen bg-background">
       <MarketplaceHeader wishlistCount={favorites.length} />
       <div className="container mx-auto px-4 py-6">
         <section className="rounded-lg border bg-card p-5 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
               <Heart className="h-5 w-5 text-primary" />
@@ -87,6 +108,22 @@ export default function WishlistPage() {
               </p>
             </div>
           </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input value={collectionName} onChange={(event) => setCollectionName(event.target.value)} placeholder="Collection name" />
+            <Button variant="outline" onClick={saveCollection} disabled={favorites.length === 0}>Save collection</Button>
+            <Button onClick={shareWishlist} disabled={favorites.length === 0}>Share</Button>
+          </div>
+          </div>
+          {shareMessage && <p className="mt-3 text-sm text-muted-foreground">{shareMessage}</p>}
+          {Object.keys(collections).length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {Object.entries(collections).map(([name, ids]) => (
+                <Button key={name} variant="secondary" size="sm" onClick={() => setFavorites(ids)}>
+                  {name} ({ids.length})
+                </Button>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="py-5">

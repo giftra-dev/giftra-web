@@ -56,6 +56,7 @@ export function RequestChatPanel({
   const [messages, setMessages] = useState<MessageWithSender[]>([])
   const [draft, setDraft] = useState("")
   const [error, setError] = useState("")
+  const [message, setMessage] = useState("")
   const [sending, setSending] = useState(false)
   const [quote, setQuote] = useState(request.quoted_price?.toString() || "")
   const [moderationText, setModerationText] = useState(chatRoom.moderation_warning || "")
@@ -105,6 +106,7 @@ export function RequestChatPanel({
 
     setSending(true)
     setError("")
+    setMessage("")
     const { error: sendError } = await sendMessage({
       chat_room_id: chatRoom.id,
       message_type: "text",
@@ -118,6 +120,7 @@ export function RequestChatPanel({
     }
 
     setDraft("")
+    setMessage("Message sent.")
     await loadMessages()
   }
 
@@ -133,6 +136,7 @@ export function RequestChatPanel({
 
     setSending(true)
     setError("")
+    setMessage("")
     try {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-")
       const { url, error: uploadError } = await uploadFileToStorage(
@@ -148,6 +152,7 @@ export function RequestChatPanel({
         content: file.type.startsWith("video/") ? `Shared video: ${file.name}` : `Shared file: ${file.name}`,
         attachments: [url],
       })
+      setMessage("Attachment shared.")
       await loadMessages()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to upload file.")
@@ -168,6 +173,8 @@ export function RequestChatPanel({
       setError(quoteError.message)
       return
     }
+    setError("")
+    setMessage("Final price sent to the customer for approval.")
     onChanged?.()
     await loadMessages()
   }
@@ -179,6 +186,8 @@ export function RequestChatPanel({
       setError(moderationError.message)
       return
     }
+    setError("")
+    setMessage(status === "active" ? "Chat resumed." : `Chat ${status}. Warning message posted below the transcript.`)
     onChanged?.()
   }
 
@@ -193,12 +202,6 @@ export function RequestChatPanel({
           {chatRoom.moderation_status}
         </Badge>
       </div>
-
-      {chatRoom.moderation_status !== "active" && (
-        <div className="border-b bg-destructive/10 p-3 text-sm text-destructive">
-          {chatRoom.moderation_warning || "Giftra has paused this chat for guideline review."}
-        </div>
-      )}
 
       <div className="h-[420px] space-y-3 overflow-y-auto bg-background/40 p-4">
         {messages.length === 0 ? (
@@ -230,6 +233,12 @@ export function RequestChatPanel({
         <div ref={endRef} />
       </div>
 
+      {chatRoom.moderation_status !== "active" && (
+        <div className="border-t bg-destructive/10 p-3 text-sm text-destructive">
+          {chatRoom.moderation_warning || "Giftra has paused this chat for guideline review."}
+        </div>
+      )}
+
       <div className="space-y-3 border-t p-3">
         <div className="flex flex-wrap gap-2">
           {templates[role].map((template) => (
@@ -258,6 +267,11 @@ export function RequestChatPanel({
           <div className="flex items-center gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
             <AlertTriangle className="h-4 w-4" />
             {error}
+          </div>
+        )}
+        {message && (
+          <div className="rounded-md bg-success/10 p-2 text-sm text-success-foreground">
+            {message}
           </div>
         )}
 

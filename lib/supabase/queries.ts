@@ -28,6 +28,7 @@ import type {
   RequestStatus,
   GiftCategory,
   OrderStatus,
+  ArtistRequestDecision,
 } from '@/lib/types/database'
 
 type MaybeEmailRelation = { email?: string } | { email?: string }[] | null | undefined
@@ -617,6 +618,93 @@ export async function updateRequestQuote(
   return { data: data as Request | null, error: error as Error | null }
 }
 
+export async function updateArtistRequestDecision(
+  requestId: string,
+  decision: ArtistRequestDecision,
+  note?: string
+): Promise<{ data: Request | null; error: Error | null }> {
+  const supabase = createClient()
+  const { user } = await getCurrentUser()
+
+  if (!user) {
+    return { data: null, error: new Error('Not authenticated') }
+  }
+
+  const updateFields: Partial<Request> = {
+    artist_decision: decision,
+    artist_decision_note: note || null,
+    artist_decision_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+
+  if (decision === 'rejected') {
+    updateFields.status = 'rejected'
+    updateFields.rejection_reason = note || 'Artist rejected this request.'
+  }
+
+  const { data, error } = await supabase
+    .from('requests')
+    .update(updateFields)
+    .eq('id', requestId)
+    .eq('assigned_artist_id', user.id)
+    .select('*, customer:profiles!requests_customer_id_fkey(*), assigned_artist:profiles!requests_assigned_artist_id_fkey(*)')
+    .single()
+
+  if (data && !error) {
+    const { data: chatRoom } = await supabase
+      .from('chat_rooms')
+      .select('id')
+      .eq('request_id', requestId)
+      .maybeSingle()
+
+    if (chatRoom) {
+      await supabase.from('messages').insert({
+        chat_room_id: chatRoom.id,
+        sender_id: user.id,
+        message_type: 'system',
+        content: decision === 'accepted'
+          ? 'Artist accepted this request. Please discuss the final details and price.'
+          : `Artist rejected this request.${note ? ` Reason: ${note}` : ''}`,
+      })
+    }
+
+    await supabase.from('notifications').insert({
+      user_id: data.customer_id,
+      title: decision === 'accepted' ? 'Artist Accepted Your Request' : 'Artist Could Not Accept Your Request',
+      message: decision === 'accepted'
+        ? `The artist accepted "${data.title}". You can now discuss the final price.`
+        : `The artist could not accept "${data.title}". Giftra admin can help reassign it.`,
+      link: `/customer/request/${requestId}`,
+    })
+  }
+
+  return { data: data as Request | null, error: error as Error | null }
+}
+
+export async function getArtistAssignedRequests(artistId: string): Promise<RequestWithRelations[]> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('requests')
+    .select(`
+      *,
+      customer:profiles!requests_customer_id_fkey(*),
+      assigned_artist:profiles!requests_assigned_artist_id_fkey(*),
+      chat_room:chat_rooms(*)
+    `)
+    .eq('assigned_artist_id', artistId)
+    .not('status', 'in', '("completed","delivered","cancelled","rejected")')
+    .order('updated_at', { ascending: false })
+
+  const requests = (data || []) as RequestWithRelations[]
+  const { data: orders } = await supabase
+    .from('orders')
+    .select('request_id')
+    .eq('artist_id', artistId)
+
+  const orderedRequestIds = new Set((orders || []).map((order) => order.request_id))
+  return requests.filter((request) => !orderedRequestIds.has(request.id))
+}
+
 export async function rejectRequest(
   requestId: string,
   reason: string
@@ -661,6 +749,11 @@ export async function createOrder(
   paymentIntentId?: string
 ): Promise<{ data: Order | null; error: Error | null }> {
   const supabase = createClient()
+
+  const existingOrder = await getOrderByRequestId(requestId)
+  if (existingOrder) {
+    return { data: existingOrder, error: null }
+  }
   
   // Get request details
   const { data: request } = await supabase
@@ -693,6 +786,30 @@ export async function createOrder(
     })
     .select()
     .single()
+
+  if (data && !paymentIntentId) {
+    await supabase.from('notifications').insert({
+      user_id: request.assigned_artist_id,
+      title: 'Customer Accepted Final Price',
+      message: `The customer accepted the final price for order ${data.order_number}. Payment is pending.`,
+      link: `/artist/orders`,
+    })
+
+    const { data: chatRoom } = await supabase
+      .from('chat_rooms')
+      .select('id')
+      .eq('request_id', requestId)
+      .maybeSingle()
+
+    if (chatRoom) {
+      await supabase.from('messages').insert({
+        chat_room_id: chatRoom.id,
+        sender_id: request.customer_id,
+        message_type: 'system',
+        content: `Customer accepted the final price. Order ${data.order_number} has been created and is awaiting payment.`,
+      })
+    }
+  }
 
   if (data && paymentIntentId) {
     // Update request status
@@ -1367,10 +1484,17 @@ export async function getOrCreateSupportConversation(
   subject = 'Chat with Giftra'
 ): Promise<{ data: SupportConversation | null; error: Error | null }> {
   const supabase = createClient()
-  const { user } = await getCurrentUser()
+  const [{ user }, profile] = await Promise.all([getCurrentUser(), getCurrentProfile()])
 
   if (!user) {
     return { data: null, error: new Error('Not authenticated') }
+  }
+
+  if (!profile) {
+    return {
+      data: null,
+      error: new Error('Your profile is still being prepared. Please refresh and try chat again.'),
+    }
   }
 
   const { data: existing } = await supabase
@@ -1388,7 +1512,7 @@ export async function getOrCreateSupportConversation(
 
   const { data, error } = await supabase
     .from('support_conversations')
-    .insert({ customer_id: user.id, subject })
+    .insert({ customer_id: profile.id, subject })
     .select()
     .single()
 

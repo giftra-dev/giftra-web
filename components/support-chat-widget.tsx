@@ -33,11 +33,16 @@ export function SupportChatWidget() {
     if (!hasSupabaseConfig) return
 
     let mounted = true
-    Promise.all([getCurrentUser(), getCurrentProfile()]).then(([{ user }, currentProfile]) => {
-      if (!mounted) return
-      setUserId(user?.id || null)
-      setProfile(currentProfile)
-    })
+    Promise.all([getCurrentUser(), getCurrentProfile()])
+      .then(([{ user }, currentProfile]) => {
+        if (!mounted) return
+        setUserId(user?.id || null)
+        setProfile(currentProfile)
+      })
+      .catch((err) => {
+        if (!mounted) return
+        setError(err instanceof Error ? err.message : "Unable to load your chat profile.")
+      })
 
     return () => {
       mounted = false
@@ -139,6 +144,7 @@ export function SupportChatWidget() {
 
           {!userId ? (
             <div className="space-y-4 p-4">
+              {error && <p className="rounded-md bg-destructive/10 p-3 text-xs text-destructive">{error}</p>}
               <p className="text-sm text-muted-foreground">
                 Please sign in first to create a chat with the Giftra admin team.
               </p>
