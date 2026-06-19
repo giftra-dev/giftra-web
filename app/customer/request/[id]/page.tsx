@@ -399,7 +399,7 @@ function RequestDetailContent({ requestId }: { requestId: string }) {
           )}
 
           {chatRoom && (
-            <RequestChatPanel chatRoom={chatRoom} request={request} onChanged={loadData} />
+            <RequestChatPanel chatRoom={chatRoom} request={request} order={order} onChanged={loadData} />
           )}
         </div>
 
