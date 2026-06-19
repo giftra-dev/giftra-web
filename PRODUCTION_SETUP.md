@@ -90,7 +90,13 @@ Demo password for seeded users:
 Password123!
 ```
 
-If seeded demo users return a Supabase Auth `grant_type=password` 500, rerun the latest `sample-marketplace.sql`. Demo users need matching rows in both `auth.users` and `auth.identities`.
+If seeded demo users return a Supabase Auth `grant_type=password` 500, run:
+
+```text
+supabase/repair-auth-users.sql
+```
+
+This fixes older/manual auth rows where fields like `confirmation_token` were left as `NULL`. Demo users also need matching rows in both `auth.users` and `auth.identities`.
 
 Remove or replace this seed data before real launch.
 
