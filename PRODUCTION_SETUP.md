@@ -51,6 +51,22 @@ The schema also creates:
 
 Do not run the old `production-workflow.sql` unless you intentionally want to maintain a separate legacy workflow. The regenerated `schema.sql` includes the current workflow support.
 
+If you are updating an existing database without a full reset, prefer the incremental files in `supabase/migrations/`.
+The first migration is:
+
+```text
+supabase/migrations/202606190001_customer_preferences_and_request_workflow.sql
+```
+
+It adds customer preferences plus the latest request workflow columns:
+
+```sql
+ALTER TABLE public.requests
+ADD COLUMN IF NOT EXISTS artist_decision TEXT NOT NULL DEFAULT 'pending' CHECK (artist_decision IN ('pending', 'accepted', 'rejected')),
+ADD COLUMN IF NOT EXISTS artist_decision_note TEXT,
+ADD COLUMN IF NOT EXISTS artist_decision_at TIMESTAMPTZ;
+```
+
 ## 3. Seed Demo Marketplace Data
 
 Optional, but useful for testing the marketplace homepage.
@@ -264,7 +280,39 @@ Recommended emails:
 - Order delivered.
 - Review request.
 
-## 13. Production Hardening
+## 13. Troubleshooting Support Chat
+
+The floating **Chat with Giftra** widget needs:
+
+- `support_conversations` and `support_messages` tables from the latest `supabase/schema.sql`.
+- RLS policies for support conversations/messages.
+- A matching `public.profiles` row for every authenticated user.
+
+If the widget cannot start a chat, run this repair SQL once in Supabase SQL Editor:
+
+```sql
+INSERT INTO public.profiles (id, email, full_name, avatar_url, role)
+SELECT
+  u.id,
+  COALESCE(u.email, ''),
+  COALESCE(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name', split_part(COALESCE(u.email, ''), '@', 1), 'Giftra user'),
+  COALESCE(u.raw_user_meta_data->>'avatar_url', u.raw_user_meta_data->>'picture'),
+  CASE
+    WHEN u.raw_user_meta_data->>'role' IN ('customer', 'artist', 'admin')
+      THEN (u.raw_user_meta_data->>'role')::public.user_role
+    ELSE 'customer'::public.user_role
+  END
+FROM auth.users u
+ON CONFLICT (id) DO UPDATE
+SET email = EXCLUDED.email,
+    full_name = COALESCE(public.profiles.full_name, EXCLUDED.full_name),
+    avatar_url = COALESCE(public.profiles.avatar_url, EXCLUDED.avatar_url),
+    updated_at = NOW();
+```
+
+If support tables or policies are missing, rerun the latest `supabase/schema.sql` on a backed-up project.
+
+## 14. Production Hardening
 
 Before launch:
 
@@ -277,7 +325,7 @@ Before launch:
 - Add analytics for marketplace search, request creation, and checkout.
 - Test customer, artist, and admin flows on desktop and mobile.
 
-## 14. Local Commands
+## 15. Local Commands
 
 Install dependencies:
 

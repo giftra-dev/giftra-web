@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { OrderFlowSteps } from "@/components/order-flow-steps"
 import { RequestChatPanel } from "@/components/request-chat-panel"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -39,6 +40,7 @@ import {
   getCurrentUser,
   getCustomerOrderByRequestId,
   getRequest,
+  markOrderPaid,
   updateOrderAndRequestStatus,
   updateOrderStatus,
 } from "@/lib/supabase/queries"
@@ -104,29 +106,37 @@ function RequestDetailContent({ requestId }: { requestId: string }) {
     loadData()
   }, [loadData])
 
-  const handlePayment = async () => {
+  const handleAcceptQuote = async () => {
     if (!request) return
     setIsSubmitting(true)
     setError("")
     setMessage("")
 
     try {
-      if (!mockPaymentsEnabled) {
-        const { data, error: orderError } = await createOrder(request.id)
-        if (orderError) throw orderError
-        if (data) {
-          setMessage("Order created. Connect a payment provider to collect payment and unlock chat.")
-        }
-        await loadData()
-        return
-      }
-
-      const { error: orderError } = await createOrder(request.id, `mock_${Date.now()}`)
+      const { error: orderError } = await createOrder(request.id)
       if (orderError) throw orderError
-      setMessage("Mock payment completed. Chat is now unlocked.")
+      setMessage("Final price accepted. Your order has been created and is ready for payment.")
       await loadData()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to start payment.")
+      setError(err instanceof Error ? err.message : "Unable to accept the quote.")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleMockPayment = async () => {
+    if (!order) return
+    setIsSubmitting(true)
+    setError("")
+    setMessage("")
+
+    try {
+      const { error: paymentError } = await markOrderPaid(order.id, `mock_${Date.now()}`)
+      if (paymentError) throw paymentError
+      setMessage("Mock payment completed. The artist can now start production.")
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to complete payment.")
     } finally {
       setIsSubmitting(false)
     }
@@ -210,8 +220,18 @@ function RequestDetailContent({ requestId }: { requestId: string }) {
   const subtotal = request.quoted_price || 0
   const platformFee = Math.round(subtotal * 0.15 * 100) / 100
   const total = subtotal + platformFee
-  const canPay = request.status === "assigned" && request.quoted_price && !order
+  const canAcceptQuote = request.status === "assigned" && request.artist_decision === "accepted" && request.quoted_price && !order
+  const canPay = order?.status === "awaiting_payment"
   const canReview = order?.status === "delivered" && !order.review
+  const mobileAction = canAcceptQuote
+    ? { label: "Accept Final Price", onClick: handleAcceptQuote, icon: CheckCircle, disabled: isSubmitting }
+    : canPay
+      ? { label: mockPaymentsEnabled ? "Pay Now" : "Payment Unavailable", onClick: handleMockPayment, icon: CreditCard, disabled: isSubmitting || !mockPaymentsEnabled }
+      : order?.status === "preview_shared"
+        ? { label: "Approve Design", onClick: handleApproveDesign, icon: CheckCircle, disabled: isSubmitting }
+        : order?.status === "shipped"
+          ? { label: "Confirm Delivery", onClick: handleMarkDelivered, icon: Package, disabled: isSubmitting }
+          : null
 
   return (
     <div className="p-6 space-y-6">
@@ -247,6 +267,8 @@ function RequestDetailContent({ requestId }: { requestId: string }) {
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          <OrderFlowSteps request={request} order={order} />
+
           <Card>
             <CardHeader>
               <CardTitle>Request Details</CardTitle>
@@ -393,7 +415,10 @@ function RequestDetailContent({ requestId }: { requestId: string }) {
                   <p className="text-sm font-medium">{REQUEST_STATUS_LABELS[request.status]}</p>
                   <p className="text-xs text-muted-foreground">
                     {request.status === "pending_review" && "Waiting for admin review"}
-                    {request.status === "assigned" && "Ready for payment"}
+                    {request.status === "assigned" && request.artist_decision === "pending" && "Waiting for artist acceptance"}
+                    {request.status === "assigned" && request.artist_decision === "accepted" && !request.quoted_price && "Discussing final price with artist"}
+                    {request.status === "assigned" && request.artist_decision === "accepted" && request.quoted_price && !order && "Final price is ready for your approval"}
+                    {request.status === "assigned" && order?.status === "awaiting_payment" && "Order created and awaiting payment"}
                     {request.status === "in_progress" && "Artist is working on your gift"}
                     {request.status === "delivered" && "Confirm and review your order"}
                     {request.status === "completed" && "Order completed"}
@@ -401,7 +426,7 @@ function RequestDetailContent({ requestId }: { requestId: string }) {
                 </div>
               </div>
 
-              {canPay && (
+              {canAcceptQuote && (
                 <div className="space-y-3">
                   <div className="p-4 rounded-lg border border-primary/20 bg-primary/5 space-y-2">
                     <div className="flex justify-between text-sm">
@@ -416,14 +441,40 @@ function RequestDetailContent({ requestId }: { requestId: string }) {
                       <span>Total</span>
                       <span>${total.toFixed(2)}</span>
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                      Accepting the final price creates your order. Payment is the next step.
+                    </p>
+                    <Button className="w-full gap-2" onClick={handleAcceptQuote} disabled={isSubmitting}>
+                      <CheckCircle className="w-4 h-4" />
+                      Accept Final Price
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {canPay && (
+                <div className="space-y-3">
+                  <div className="p-4 rounded-lg border border-primary/20 bg-primary/5 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Subtotal</span>
+                      <span>${order.subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Platform fee</span>
+                      <span>${order.platform_fee.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-lg border-t pt-2">
+                      <span>Total</span>
+                      <span>${order.total.toFixed(2)}</span>
+                    </div>
                     {!mockPaymentsEnabled && (
                       <p className="text-xs text-muted-foreground">
-                        Payment provider is not configured yet. This will create an unpaid order.
+                        Payment provider is not configured yet. Enable mock payments for testing or connect a real provider.
                       </p>
                     )}
-                    <Button className="w-full gap-2" onClick={handlePayment} disabled={isSubmitting}>
+                    <Button className="w-full gap-2" onClick={handleMockPayment} disabled={isSubmitting || !mockPaymentsEnabled}>
                       <CreditCard className="w-4 h-4" />
-                      {mockPaymentsEnabled ? "Pay with Mock Payment" : "Create Payment Order"}
+                      {mockPaymentsEnabled ? "Pay with Mock Payment" : "Payment Unavailable"}
                     </Button>
                   </div>
                 </div>
@@ -478,6 +529,14 @@ function RequestDetailContent({ requestId }: { requestId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {mobileAction && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-card p-3 shadow-lg md:hidden">
+          <Button className="w-full gap-2" onClick={mobileAction.onClick} disabled={mobileAction.disabled}>
+            <mobileAction.icon className="h-4 w-4" />
+            {mobileAction.label}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

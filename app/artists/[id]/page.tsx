@@ -10,7 +10,7 @@ import { CreateRequestDialog } from "@/components/create-request-dialog"
 import { getArtistPortfolio, getArtistTestimonials, getCurrentUser } from "@/lib/supabase/queries"
 import type { ArtistArtwork, ArtworkFeedbackWithRelations, GiftCategory, Profile, Review } from "@/lib/types/database"
 import { CATEGORY_LABELS } from "@/lib/types/database"
-import { ArrowLeft, Heart, Star, UserCheck } from "lucide-react"
+import { ArrowLeft, Clock, Heart, ShieldCheck, Sparkles, Star, UserCheck, WalletCards } from "lucide-react"
 
 const favoriteStorageKey = "giftra:favorites"
 
@@ -58,6 +58,11 @@ export default function PublicArtistPortfolioPage({
     if (reviews.length === 0) return artist?.rating || 0
     return reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length
   }, [artist?.rating, reviews])
+  const startingPrice = useMemo(() => {
+    const prices = artworks.flatMap((artwork) => [artwork.price_min, artwork.price_max]).filter((price): price is number => Boolean(price && price > 0))
+    return prices.length ? Math.min(...prices) : null
+  }, [artworks])
+  const avgTurnaround = artworks.length > 8 ? "5-10 days" : artworks.length > 0 ? "7-14 days" : "Quote-based"
 
   const toggleFavorite = (artworkId: string) => {
     setFavorites((current) => {
@@ -141,6 +146,28 @@ export default function PublicArtistPortfolioPage({
                 <span>{reviews.length || artist.total_reviews} reviews</span>
                 <span>{artworks.length} portfolio pieces</span>
               </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-lg border bg-card p-3 text-sm">
+                  <WalletCards className="mb-2 h-4 w-4 text-primary" />
+                  <p className="font-medium">{startingPrice ? `From $${startingPrice}` : "Quote based"}</p>
+                  <p className="text-xs text-muted-foreground">Starting price</p>
+                </div>
+                <div className="rounded-lg border bg-card p-3 text-sm">
+                  <Clock className="mb-2 h-4 w-4 text-primary" />
+                  <p className="font-medium">{avgTurnaround}</p>
+                  <p className="text-xs text-muted-foreground">Typical turnaround</p>
+                </div>
+                <div className="rounded-lg border bg-card p-3 text-sm">
+                  <Sparkles className="mb-2 h-4 w-4 text-primary" />
+                  <p className="font-medium">{artist.is_available ? "Accepting work" : "Limited slots"}</p>
+                  <p className="text-xs text-muted-foreground">Availability</p>
+                </div>
+                <div className="rounded-lg border bg-card p-3 text-sm">
+                  <ShieldCheck className="mb-2 h-4 w-4 text-primary" />
+                  <p className="font-medium">Giftra reviewed</p>
+                  <p className="text-xs text-muted-foreground">Portfolio approval</p>
+                </div>
+              </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 {(artist.specialties || []).map((specialty) => (
                   <Badge key={specialty} variant="secondary">{CATEGORY_LABELS[specialty]}</Badge>
@@ -153,7 +180,10 @@ export default function PublicArtistPortfolioPage({
 
       <section className="container mx-auto px-4 py-8">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Sample Work</h2>
+          <div>
+            <h2 className="text-xl font-semibold">Portfolio gallery</h2>
+            <p className="text-sm text-muted-foreground">Compare styles, tags, and price ranges before requesting a similar gift.</p>
+          </div>
           {isLoggedIn ? (
             <Button onClick={() => artworks[0] ? startRequest(artworks[0]) : setArtistRequestOpen(true)}>
               Request This Artist

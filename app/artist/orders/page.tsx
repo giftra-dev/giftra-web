@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { OrderFlowSteps } from "@/components/order-flow-steps"
 import { RequestChatPanel } from "@/components/request-chat-panel"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -29,8 +31,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { getArtistOrders, updateOrderStatus, getChatRoomByRequestId, getCurrentUser, getChatRoom } from "@/lib/supabase/queries"
-import type { ChatRoomWithRelations, OrderStatus } from "@/lib/types/database"
+import {
+  getArtistAssignedRequests,
+  getArtistOrders,
+  updateArtistRequestDecision,
+  updateOrderStatus,
+  getChatRoomByRequestId,
+  getCurrentUser,
+  getChatRoom,
+  updateRequestQuote,
+} from "@/lib/supabase/queries"
+import type { ChatRoomWithRelations, OrderStatus, RequestWithRelations } from "@/lib/types/database"
+import { CATEGORY_LABELS } from "@/lib/types/database"
 
 const orderStatusColors: Record<OrderStatus, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -87,12 +99,19 @@ interface OrderWithDetails {
 
 function ArtistOrdersContent() {
   const [orders, setOrders] = useState<OrderWithDetails[]>([])
+  const [assignedRequests, setAssignedRequests] = useState<RequestWithRelations[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<OrderWithDetails | null>(null)
+  const [selectedRequest, setSelectedRequest] = useState<RequestWithRelations | null>(null)
   const [selectedChat, setSelectedChat] = useState<ChatRoomWithRelations | null>(null)
   const [trackingNumber, setTrackingNumber] = useState("")
+  const [rejectReason, setRejectReason] = useState("")
+  const [quoteDrafts, setQuoteDrafts] = useState<Record<string, string>>({})
+  const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
   const [updating, setUpdating] = useState(false)
   
   useEffect(() => {
@@ -106,7 +125,10 @@ function ArtistOrdersContent() {
       return
     }
     
-    const ordersData = await getArtistOrders(user.id)
+    const [ordersData, assignedRequestsData] = await Promise.all([
+      getArtistOrders(user.id),
+      getArtistAssignedRequests(user.id),
+    ])
     
     const ordersWithChat = await Promise.all(
       ordersData.map(async (order) => {
@@ -127,6 +149,16 @@ function ArtistOrdersContent() {
       })
     )
     setOrders(ordersWithChat as OrderWithDetails[])
+    setAssignedRequests(assignedRequestsData)
+    setQuoteDrafts((current) => {
+      const next = { ...current }
+      assignedRequestsData.forEach((request) => {
+        if (!next[request.id] && request.quoted_price) {
+          next[request.id] = request.quoted_price.toString()
+        }
+      })
+      return next
+    })
     setLoading(false)
   }
 
@@ -151,6 +183,58 @@ function ArtistOrdersContent() {
     setUpdating(false)
   }
 
+  const handleAcceptRequest = async (request: RequestWithRelations) => {
+    setUpdating(true)
+    setError("")
+    setMessage("")
+    const { error: decisionError } = await updateArtistRequestDecision(request.id, "accepted")
+    if (decisionError) {
+      setError(decisionError.message)
+    } else {
+      setMessage("Request accepted. You can now discuss and send the final price to the customer.")
+      await loadOrders()
+    }
+    setUpdating(false)
+  }
+
+  const handleRejectRequest = async () => {
+    if (!selectedRequest) return
+    setUpdating(true)
+    setError("")
+    setMessage("")
+    const { error: decisionError } = await updateArtistRequestDecision(selectedRequest.id, "rejected", rejectReason)
+    if (decisionError) {
+      setError(decisionError.message)
+    } else {
+      setMessage("Request rejected. The customer has been notified.")
+      setRejectDialogOpen(false)
+      setRejectReason("")
+      setSelectedRequest(null)
+      await loadOrders()
+    }
+    setUpdating(false)
+  }
+
+  const handleSendFinalPrice = async (request: RequestWithRelations) => {
+    const amount = Number.parseFloat(quoteDrafts[request.id] || "")
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("Enter a valid final price.")
+      return
+    }
+
+    setUpdating(true)
+    setError("")
+    setMessage("")
+    const { error: quoteError } = await updateRequestQuote(request.id, amount, `Artist proposed final price: ${amount}.`)
+    if (quoteError) {
+      setError(quoteError.message)
+    } else {
+      setMessage("Final price sent to the customer for approval.")
+      await loadOrders()
+    }
+    setUpdating(false)
+  }
+
   const handleShipOrder = async () => {
     if (!selectedOrder) return
     setUpdating(true)
@@ -166,11 +250,17 @@ function ArtistOrdersContent() {
   }
 
   const activeOrders = orders.filter(o => 
-    ["paid", "in_progress", "preview_shared", "revision_requested"].includes(o.status)
+    ["awaiting_payment", "paid", "in_progress", "preview_shared", "revision_requested"].includes(o.status)
   )
   
   const completedOrders = orders.filter(o => 
     ["ready_to_ship", "shipped", "delivered", "completed"].includes(o.status)
+  )
+
+  const filteredAssignedRequests = assignedRequests.filter((request) =>
+    request.title.toLowerCase().includes(search.toLowerCase()) ||
+    request.customer?.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+    request.customer?.email?.toLowerCase().includes(search.toLowerCase())
   )
 
   const filteredActive = activeOrders.filter(o =>
@@ -207,8 +297,19 @@ function ArtistOrdersContent() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground">My Orders</h1>
-        <p className="text-muted-foreground">Manage orders assigned to you</p>
+        <p className="text-muted-foreground">Accept requests, send final prices, and manage active orders</p>
       </div>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {message && (
+        <Alert>
+          <AlertDescription>{message}</AlertDescription>
+        </Alert>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -286,9 +387,95 @@ function ArtistOrdersContent() {
       {/* Orders Tabs */}
       <Tabs defaultValue="active" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="active">Active ({activeOrders.length})</TabsTrigger>
-          <TabsTrigger value="completed">Completed ({completedOrders.length})</TabsTrigger>
-        </TabsList>
+        <TabsTrigger value="requests">Requests ({assignedRequests.length})</TabsTrigger>
+        <TabsTrigger value="active">Active ({activeOrders.length})</TabsTrigger>
+        <TabsTrigger value="completed">Completed ({completedOrders.length})</TabsTrigger>
+      </TabsList>
+
+        <TabsContent value="requests">
+          <Card>
+            <CardContent className="p-0">
+              {filteredAssignedRequests.length === 0 ? (
+                <div className="text-center py-12">
+                  <Package className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-muted-foreground">No assigned requests waiting for action</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {filteredAssignedRequests.map((request) => (
+                    <div key={request.id} className="space-y-4 p-4 hover:bg-muted/50 transition-colors">
+                      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <h3 className="font-medium text-foreground">{request.title}</h3>
+                            <Badge variant={request.artist_decision === "accepted" ? "default" : request.artist_decision === "rejected" ? "destructive" : "secondary"}>
+                              {request.artist_decision}
+                            </Badge>
+                            <Badge variant="outline">{CATEGORY_LABELS[request.category]}</Badge>
+                          </div>
+                          <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{request.description}</p>
+                          <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <User className="w-3 h-3" />
+                              {request.customer?.full_name || request.customer?.email || "Customer"}
+                            </span>
+                            {request.deadline && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                Due: {new Date(request.deadline).toLocaleDateString()}
+                              </span>
+                            )}
+                            <span>Budget: ${request.budget_min || 0} - ${request.budget_max || 0}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2 sm:min-w-72">
+                          {request.chat_room?.id && (
+                            <Button size="sm" variant="outline" className="gap-1" onClick={() => openOrderChat(request.chat_room!.id)}>
+                              <MessageSquare className="w-4 h-4" />
+                              Chat
+                            </Button>
+                          )}
+                          {request.artist_decision === "pending" && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button size="sm" onClick={() => handleAcceptRequest(request)} disabled={updating}>
+                                Accept
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedRequest(request)
+                                  setRejectDialogOpen(true)
+                                }}
+                                disabled={updating}
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                          )}
+                          {request.artist_decision === "accepted" && (
+                            <div className="flex gap-2">
+                              <Input
+                                value={quoteDrafts[request.id] || ""}
+                                onChange={(event) => setQuoteDrafts((current) => ({ ...current, [request.id]: event.target.value }))}
+                                type="number"
+                                placeholder="Final price"
+                              />
+                              <Button size="sm" onClick={() => handleSendFinalPrice(request)} disabled={updating}>
+                                Send
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <OrderFlowSteps request={request} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="active">
           <Card>
@@ -440,6 +627,31 @@ function ArtistOrdersContent() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Request</DialogTitle>
+            <DialogDescription>
+              Add a short note for Giftra and the customer. The request will leave your order queue.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={rejectReason}
+            onChange={(event) => setRejectReason(event.target.value)}
+            placeholder="Reason for rejecting this request"
+            rows={4}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleRejectRequest} disabled={updating}>
+              {updating ? "Rejecting..." : "Reject Request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Shipping Dialog */}
       <Dialog open={updateDialogOpen} onOpenChange={setUpdateDialogOpen}>

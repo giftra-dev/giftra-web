@@ -35,6 +35,8 @@ export type MessageType =
   | 'approval'
   | 'quote'
 
+export type ArtistRequestDecision = 'pending' | 'accepted' | 'rejected'
+
 export type GiftCategory =
   | 'portrait'
   | 'caricature'
@@ -55,6 +57,7 @@ export interface Profile {
   avatar_url: string | null
   phone: string | null
   role: UserRole
+  customer_preferences: Record<string, unknown>
   // Artist-specific
   bio: string | null
   portfolio_url: string | null
@@ -89,6 +92,9 @@ export interface Request {
   budget_max: number | null
   quoted_price: number | null
   final_price: number | null
+  artist_decision: ArtistRequestDecision
+  artist_decision_note: string | null
+  artist_decision_at: string | null
   // Status
   status: RequestStatus
   admin_notes: string | null
@@ -345,6 +351,7 @@ export interface UpdateProfileInput {
   full_name?: string
   avatar_url?: string
   phone?: string
+  customer_preferences?: Record<string, unknown>
   bio?: string
   portfolio_url?: string
   specialties?: GiftCategory[]

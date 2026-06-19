@@ -13,6 +13,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { 
   Gift, 
   LayoutDashboard, 
@@ -29,7 +35,8 @@ import {
   UserCheck,
   Flag,
   Images,
-  LifeBuoy
+  LifeBuoy,
+  Menu
 } from "lucide-react"
 import { OrderHistoryModal } from "@/components/order-history-modal"
 import { cn } from "@/lib/utils"
@@ -98,6 +105,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [orderHistoryOpen, setOrderHistoryOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const loadUser = useCallback(async () => {
     if (!hasSupabaseConfig) {
@@ -129,6 +137,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
         phone: null,
         role: userRole,
+        customer_preferences: {},
         bio: null,
         portfolio_url: null,
         specialties: [],
@@ -266,119 +275,153 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-background flex">
-      {/* Sidebar */}
-      <aside className="w-64 bg-card border-r border-border flex flex-col shadow-sm">
-        {/* Logo */}
-        <div className="border-b">
-          <div className="bg-primary px-4 py-2 text-[11px] font-semibold text-primary-foreground">
-            Giftra workspace
-          </div>
-          <div className="h-16 flex items-center px-4">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-                <Gift className="w-5 h-5 text-primary-foreground" />
-              </div>
-              <span className="font-bold text-lg text-foreground">Giftra</span>
-            </Link>
-          </div>
+  const sidebarContent = (
+    <>
+      {/* Logo */}
+      <div className="border-b">
+        <div className="bg-primary px-4 py-2 text-[11px] font-semibold text-primary-foreground">
+          Giftra workspace
         </div>
+        <div className="h-16 flex items-center px-4">
+          <Link href="/" className="flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+            <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
+              <Gift className="w-5 h-5 text-primary-foreground" />
+            </div>
+            <span className="font-bold text-lg text-foreground">Giftra</span>
+          </Link>
+        </div>
+      </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                <item.icon className="w-5 h-5" />
-                {item.label}
-                {item.label === "Messages" && unreadNotifications > 0 && (
-                  <Badge variant="destructive" className="ml-auto h-5 min-w-[20px] px-1.5">
-                    {unreadNotifications > 99 ? '99+' : unreadNotifications}
-                  </Badge>
-                )}
-              </Link>
-            )
-          })}
-        </nav>
-
-        {/* User Section */}
-        <div className="p-4 border-t">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center overflow-hidden">
-              {currentUser.avatar ? (
-                <img src={currentUser.avatar} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <RoleIcon className="w-5 h-5 text-secondary-foreground" />
+      {/* Navigation */}
+      <nav className="flex-1 p-4 space-y-1">
+        {navItems.map((item) => {
+          const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => setMobileMenuOpen(false)}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">
-                {currentUser.name}
-              </p>
-              <p className="text-xs text-muted-foreground capitalize">
-                {currentUser.role}
-              </p>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-muted"
-              onClick={handleOpenNotifications}
             >
-              <Bell className="w-4 h-4 mr-2" />
-              Notifications
-              {unreadNotifications > 0 && (
+              <item.icon className="w-5 h-5" />
+              {item.label}
+              {item.label === "Messages" && unreadNotifications > 0 && (
                 <Badge variant="destructive" className="ml-auto h-5 min-w-[20px] px-1.5">
-                  {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                  {unreadNotifications > 99 ? '99+' : unreadNotifications}
                 </Badge>
               )}
-            </Button>
-            {currentUser.role === "customer" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-muted"
-                onClick={() => setOrderHistoryOpen(true)}
-              >
-                <History className="w-4 h-4 mr-2" />
-                Order History
-              </Button>
+            </Link>
+          )
+        })}
+      </nav>
+
+      {/* User Section */}
+      <div className="p-4 border-t">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center overflow-hidden">
+            {currentUser.avatar ? (
+              <img src={currentUser.avatar} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <RoleIcon className="w-5 h-5 text-secondary-foreground" />
             )}
-            <Button
-              asChild
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-muted"
-            >
-              <Link href={`/${currentUser.role}/settings`}>
-                <Settings className="w-4 h-4 mr-2" />
-                Settings
-              </Link>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-muted"
-              onClick={handleLogout}
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign out
-            </Button>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground truncate">
+              {currentUser.name}
+            </p>
+            <p className="text-xs text-muted-foreground capitalize">
+              {currentUser.role}
+            </p>
           </div>
         </div>
+        <div className="space-y-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-muted"
+            onClick={() => {
+              setMobileMenuOpen(false)
+              handleOpenNotifications()
+            }}
+          >
+            <Bell className="w-4 h-4 mr-2" />
+            Notifications
+            {unreadNotifications > 0 && (
+              <Badge variant="destructive" className="ml-auto h-5 min-w-[20px] px-1.5">
+                {unreadNotifications > 99 ? "99+" : unreadNotifications}
+              </Badge>
+            )}
+          </Button>
+          {currentUser.role === "customer" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-muted"
+              onClick={() => {
+                setMobileMenuOpen(false)
+                setOrderHistoryOpen(true)
+              }}
+            >
+              <History className="w-4 h-4 mr-2" />
+              Order History
+            </Button>
+          )}
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-muted"
+          >
+            <Link href={`/${currentUser.role}/settings`} onClick={() => setMobileMenuOpen(false)}>
+              <Settings className="w-4 h-4 mr-2" />
+              Settings
+            </Link>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-muted"
+            onClick={handleLogout}
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Sign out
+          </Button>
+        </div>
+      </div>
+    </>
+  )
+
+  return (
+    <div className="min-h-screen bg-background md:flex">
+      <div className="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-card px-4 md:hidden">
+        <Link href="/" className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+            <Gift className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <span className="font-bold text-foreground">Giftra</span>
+        </Link>
+        <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(true)} aria-label="Open menu">
+          <Menu className="h-5 w-5" />
+        </Button>
+      </div>
+
+      <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+        <SheetContent side="left" className="w-80 p-0">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Workspace menu</SheetTitle>
+          </SheetHeader>
+          {sidebarContent}
+        </SheetContent>
+      </Sheet>
+
+      {/* Sidebar */}
+      <aside className="hidden w-64 bg-card border-r border-border md:flex flex-col shadow-sm">
+        {sidebarContent}
       </aside>
 
       {/* Main Content */}

@@ -115,7 +115,8 @@ export function SignupForm({ fixedRole }: { fixedRole?: Exclude<UserRole, "admin
 
       if (data.session) {
         // User is signed in immediately (email confirmation disabled)
-        window.location.assign(next?.startsWith("/") && !next.startsWith("//") ? next : `/${role}/dashboard`)
+        const fallback = role === "customer" ? "/customer/onboarding" : `/${role}/dashboard`
+        window.location.assign(next?.startsWith("/") && !next.startsWith("//") ? next : fallback)
         return
       }
 

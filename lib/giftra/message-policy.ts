@@ -1,12 +1,14 @@
 export const protectedChatWarning =
-  "To keep your order protected, communication must stay on Giftra"
+  "To keep your order protected, communication must stay on Giftra. Please remove phone numbers, email addresses, social handles, or external chat links."
 
 const contactPatterns = [
   /\b(?:\+?\d[\s().-]?){10,}\b/,
   /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/,
   /(^|\s)@[a-zA-Z0-9_]{1,30}\b/,
-  /\b(?:wa\.me|whatsapp|telegram|signal)\b/i,
-  /\b(?:phone|call|text|dm|instagram|insta|telegram|signal|whatsapp)\s*:?\s*\S+/i,
+  /\b(?:wa\.me|whatsapp|telegram|signal|discord|facebook|fb\.com|instagram|insta|x\.com|twitter|snapchat)\b/i,
+  /\b(?:phone|call|text|sms|dm|email|mail|instagram|insta|telegram|signal|whatsapp|discord)\s*:?\s*\S+/i,
+  /\b(?:https?:\/\/|www\.)\S+/i,
+  /\b(?:gmail|yahoo|outlook|hotmail|icloud)\s*(?:dot|\.)\s*com\b/i,
 ]
 
 export function containsContactInfo(text: string) {
